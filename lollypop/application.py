@@ -98,7 +98,7 @@ class Application(Gtk.Application, ApplicationActions, ApplicationCmdline):
         settings = Gio.Settings.new("org.gnome.desktop.interface")
         self.animations = settings.get_value("enable-animations").get_boolean()
         GLib.set_application_name("Lollypop")
-        GLib.set_prgname("lollypop")
+        GLib.set_prgname("org.gnome.Lollypop")
         self.connect("activate", self.__on_activate)
         self.connect("shutdown", lambda a: self.__save_state())
         if GLib.environ_getenv(GLib.get_environ(), "DEBUG_LEAK") is not None:
