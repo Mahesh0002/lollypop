@@ -313,16 +313,12 @@ class SettingsDialog:
         uris = []
         default = GLib.get_user_special_dir(
             GLib.UserDirectory.DIRECTORY_MUSIC)
-        if default is not None:
-            default = GLib.filename_to_uri(default)
-        else:
-            default = None
         for chooser in self.__choosers:
             uri = chooser.get_uri()
             if uri is not None and uri not in uris:
                 uris.append(uri)
-        if not uris:
-            uris.append(default)
+        if not uris and default is not None:
+            uris.append(GLib.filename_to_uri(default))
 
         previous = App().settings.get_value("music-uris")
         App().settings.set_value("music-uris", GLib.Variant("as", uris))
