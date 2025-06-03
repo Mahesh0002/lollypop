@@ -52,12 +52,12 @@ i18n.merge_file(
 )
 
 # Validating the appdata file
-appstreamcli = find_program('appstream-util', required: false)
+appstreamcli = find_program('appstreamcli', required: false)
 if appstreamcli.found()
   test (
     'Validate appdata file',
     appstreamcli,
-    args: ['validate', '--nonet', join_paths(meson.current_build_dir (), project_id + '.appdata.xml')]
+    args: ['validate', '--no-net', '--explain', join_paths(meson.current_build_dir (), project_id + '.appdata.xml')]
   )
 endif
 
