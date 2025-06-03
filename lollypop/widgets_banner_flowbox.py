@@ -10,7 +10,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-from gi.repository import Gtk, GLib, GObject
+from gi.repository import Gtk, GLib, GObject, Pango
 
 from lollypop.define import ArtSize, ViewType, MARGIN, Size
 from lollypop.widgets_banner import BannerWidget
@@ -45,6 +45,7 @@ class FlowboxBannerWidget(BannerWidget):
         self.__title_label.set_margin_start(MARGIN)
         self.__title_label.set_hexpand(True)
         self.__title_label.set_property("halign", Gtk.Align.START)
+        self.__title_label.set_ellipsize(Pango.EllipsizeMode.END)
         linked = Gtk.Grid.new()
         linked.show()
         linked.get_style_context().add_class("linked")
