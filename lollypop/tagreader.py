@@ -17,7 +17,8 @@ from gettext import gettext as _
 
 from lollypop.define import App
 from lollypop.logger import Logger
-from lollypop.utils_file import decodeUnicode, splitUnicode
+from lollypop.utils_file import decodeUnicode, splitUnicode, \
+    null_terminator_for_encoding, split_null_terminated_unicode
 from lollypop.utils import format_artist_name, get_iso_date_from_string
 from lollypop.tag_frame_text import FrameTextTag
 from lollypop.tag_frame_lang import FrameLangTag
@@ -466,14 +467,55 @@ class TagReader:
             @parma tags as Gst.TagList
             @return lyrics as ([str, int])
         """
-        def decode_lyrics(bytes_list, encoding):
+        def decode_lyrics(frame, encoding):
             lyrics = []
             try:
-                for frame in bytes_list:
-                    (l, t) = splitUnicode(frame, encoding)
-                    if l:
-                        lyrics.append((decodeUnicode(l, encoding),
-                                       int.from_bytes(t[1:4], "big")))
+                raw_lyrics = []
+                while len(frame):
+                    (line_d, frame) = split_null_terminated_unicode(frame, encoding)
+                    line = decodeUnicode(line_d, encoding)
+                    (time, frame) = int.from_bytes(frame[0:4], "big"), frame[4:]
+                    raw_lyrics.append((line,time))
+
+                # the lyrics might be out of order in the file
+                raw_lyrics = sorted(raw_lyrics, key=lambda lyr: lyr[1])
+
+                if not any('\n' in line for (line,time) in raw_lyrics):
+                    # As there are no newlines in lyrics, we will treat line borders as newlines
+                    # it's a slightly broken approach
+                    lyrics = raw_lyrics
+                else:
+                    # The SYLT tag is capable of holding karaoke-style lyrics i.e. when a specific timestamp
+                    # corresponds to a single word or syllable. lollypop currently has no means to display
+                    # that so we will have to reassemble those into line-based lyrics.
+                    current_line = ""
+                    current_time = None
+                    for (line, time) in raw_lyrics:
+                        if current_time is None and line:
+                            current_time = time
+                        while line:
+                            if not '\n' in line:
+                                current_line += line
+                                line = ""
+                            else:
+                                (head,line) = line.split('\n', 1)
+                                current_line += head
+                                lyrics.append((current_line, current_time))
+                                current_line = ""
+                                if line:
+                                    current_time = time
+                                else:
+                                    current_time = None
+                    # last line might not have a newline
+                    if current_line:
+                        lyrics.append((current_line, current_time))
+
+                # Remove empty lines from the beginning and end
+                while lyrics and not lyrics[0][0]:
+                    lyrics.pop(0)
+                while lyrics and not lyrics[-1][0]:
+                    lyrics.pop(-1)
+
             except Exception as e:
                 Logger.warning(
                         "TagReader::get_synced_lyrics.decode_lyrics(): %s", e)
@@ -483,9 +525,13 @@ class TagReader:
             try:
                 b = self.__get_private_bytes(tags, "SYLT")
                 if b:
+                    # skip the header
                     frame = b[10:]
                     encoding = frame[0:1]
-                    string = decode_lyrics(frame.split(b"\n"), encoding)
+                    # skip Language, Time stamp format, Content type and Content description
+                    (_, frame) = split_null_terminated_unicode(frame[6:],encoding)
+                    # TODO: we should be interpretating at least the format, rather than just skipping it
+                    string = decode_lyrics(frame, encoding)
                     if string is not None:
                         return string
             except Exception as e:
