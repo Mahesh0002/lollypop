@@ -226,7 +226,7 @@ class SearchLollypopService(Server, Gio.Application):
 
     def LaunchSearch(self, terms, utime):
         results = self.__search(terms)
-        argv = ["lollypop", "--play-ids", ";".join(results), None]
+        argv = ["lollypop", "--play-ids", ";".join(results)]
         (pid, stdin, stdout, stderr) = GLib.spawn_async(
                     argv, flags=GLib.SpawnFlags.SEARCH_PATH,
                     standard_input=False,
