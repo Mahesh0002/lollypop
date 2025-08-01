@@ -155,7 +155,8 @@ class SearchLollypopService(Server, Gio.Application):
         Gio.Application.__init__(
                             self,
                             application_id='org.gnome.Lollypop.SearchProvider',
-                            flags=Gio.ApplicationFlags.IS_SERVICE)
+                            flags=Gio.ApplicationFlags.IS_SERVICE,
+                            inactivity_timeout=10000)
         self.cursors = {}
         self.task_helper = TaskHelper()
         self.settings = Settings.new()
@@ -188,6 +189,7 @@ class SearchLollypopService(Server, Gio.Application):
         return self.__search(terms)
 
     def GetResultMetas(self, ids):
+        self.hold()
         results = []
         try:
             for search_id in ids:
@@ -218,7 +220,7 @@ class SearchLollypopService(Server, Gio.Application):
                 results.append(d)
         except Exception as e:
             print("SearchLollypopService::GetResultMetas():", e)
-            return []
+        self.release()
         return results
 
     def GetSubsearchResultSet(self, previous_results, new_terms):
@@ -235,6 +237,7 @@ class SearchLollypopService(Server, Gio.Application):
         GLib.spawn_close_pid(pid)
 
     def __search(self, terms):
+        self.hold()
         ids = []
         search = noaccents(" ".join(terms))
         try:
@@ -250,12 +253,12 @@ class SearchLollypopService(Server, Gio.Application):
                 ids.append("t:"+str(track_id))
         except Exception as e:
             print("SearchLollypopService::__search():", e)
+        self.release()
         return ids
 
 def main():
     Gst.init(None)
     service = SearchLollypopService()
-    service.hold()
     service.run()
 
 if __name__ == '__main__':
