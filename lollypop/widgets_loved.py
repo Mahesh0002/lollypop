@@ -106,10 +106,10 @@ class LovedWidget(Gtk.Bin):
         if flags & LovedFlags.LOVED:
             self.set_tooltip_text(_("Like"))
             self.__artwork.set_opacity(0.8)
-            self.__artwork.set_from_icon_name("emblem-favorite-symbolic",
+            self.__artwork.set_from_icon_name("emote-love-symbolic",
                                               self.__icon_size)
         else:
             self.set_tooltip_text(_("Allow playback"))
             self.__artwork.set_opacity(0.2)
-            self.__artwork.set_from_icon_name("emblem-favorite-symbolic",
+            self.__artwork.set_from_icon_name("emote-love-symbolic",
                                               self.__icon_size)

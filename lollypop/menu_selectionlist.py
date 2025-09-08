@@ -91,7 +91,7 @@ class SelectionListMenu(Gio.Menu):
             from lollypop.menu_header import MenuHeader
             if mask & SelectionListMask.PLAYLISTS:
                 label = _("Playlists")
-                icon_name = "emblem-documents-symbolic"
+                icon_name = "view-list-symbolic"
             else:
                 label = _("Sidebar")
                 icon_name = "org.gnome.Lollypop-sidebar-symbolic"

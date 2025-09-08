@@ -52,7 +52,7 @@ you need to allow <b>Lollypop</b>."""),
             },
             {
               "title": _("Copy key"),
-              "icon_name": "emblem-music-symbolic",
+              "icon_name": "folder-music-symbolic",
               "markup": _("""
 <b>Finish</b> the activation by copying <b>API-Key</b> in Lollypop."""),
               "uri_label": "",

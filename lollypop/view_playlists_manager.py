@@ -37,7 +37,7 @@ class PlaylistsManagerView(FlowBoxView, SignalsHelper):
         FlowBoxView.__init__(self, StorageType.ALL,
                              view_type | ViewType.OVERLAY)
         self.__signal_id = None
-        self._empty_icon_name = "emblem-documents-symbolic"
+        self._empty_icon_name = "view-list-symbolic"
         if self.args is None:
             self.add_widget(self._box, None)
         else:

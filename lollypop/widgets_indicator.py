@@ -52,7 +52,7 @@ class IndicatorWidget(Gtk.EventBox):
             Show loved indicator
         """
         self.__init_loved()
-        self.__loved.set_from_icon_name("emblem-favorite-symbolic",
+        self.__loved.set_from_icon_name("emote-love-symbolic",
                                         Gtk.IconSize.MENU)
         self.__stack.set_visible_child_name("loved")
 

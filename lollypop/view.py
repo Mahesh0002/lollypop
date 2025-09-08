@@ -53,7 +53,7 @@ class View(Gtk.Grid, AdaptiveHelper, FilteringHelper, SignalsHelper):
         self.set_border_width(0)
         self.__new_ids = []
         self._empty_message = _("No items to show")
-        self._empty_icon_name = "emblem-music-symbolic"
+        self._empty_icon_name = "folder-music-symbolic"
 
         if view_type & ViewType.SCROLLED:
             self.__scrolled = Gtk.ScrolledWindow.new()

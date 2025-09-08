@@ -60,7 +60,7 @@ Then, allow Lollypop.""") % name,
             },
             {
               "title": _("Just play a track"),
-              "icon_name": "emblem-music-symbolic",
+              "icon_name": "folder-music-symbolic",
               "markup": _("""
 <b>Click "Finish"</b> once Lollypop has been allowed."""),
               "uri_label": "",

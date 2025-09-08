@@ -404,7 +404,7 @@ def get_icon_name(object_id):
     elif object_id == Type.POPULARS:
         icon = "starred-symbolic"
     elif object_id == Type.PLAYLISTS:
-        icon = "emblem-documents-symbolic"
+        icon = "view-list-symbolic"
     elif object_id == Type.ALL:
         icon = "media-optical-cd-audio-symbolic"
     elif object_id == Type.ARTISTS:
@@ -418,7 +418,7 @@ def get_icon_name(object_id):
     elif object_id == Type.RANDOMS:
         icon = "media-playlist-shuffle-symbolic"
     elif object_id == Type.LOVED:
-        icon = "emblem-favorite-symbolic"
+        icon = "emote-love-symbolic"
     elif object_id == Type.LITTLE:
         icon = "org.gnome.Lollypop-unplayed-albums-symbolic"
     elif object_id == Type.YEARS:
