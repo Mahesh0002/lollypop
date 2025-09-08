@@ -199,10 +199,9 @@ class ApplicationCmdline:
                 else:
                     self.__on_parse_finished(None, None, [], audio_uris)
             elif self.window is not None:
-                if not self.window.is_visible():
-                    self.window.present()
-                    emit_signal(self.player, "status-changed")
-                    emit_signal(self.player, "current-changed")
+                self.window.present()
+                emit_signal(self.player, "status-changed")
+                emit_signal(self.player, "current-changed")
             Gdk.notify_startup_complete()
         except Exception as e:
             Logger.error("Application::__on_command_line(): %s", e)
