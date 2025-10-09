@@ -16,7 +16,7 @@ import itertools
 
 from lollypop.sqlcursor import SqlCursor
 from lollypop.define import App, StorageType, Type, LovedFlags
-from lollypop.utils import noaccents, make_subrequest
+from lollypop.utils import noaccents, make_subrequest, noaccents
 
 
 class TracksDatabase:
@@ -1038,18 +1038,28 @@ class TracksDatabase:
                          WHERE track_genres.track_id NOT IN (\
                             SELECT tracks.rowid FROM tracks)")
 
-    def search(self, searched, storage_type):
+    def search(self, terms, storage_type):
         """
             Search for tracks looking like searched
-            @param searched as str without accents
+            @param terms array of strings
             @param storage_type as StorageType
             @return [(int, name)]
         """
         with SqlCursor(self.__db) as sql:
-            filters = ("%" + searched + "%", storage_type)
-            request = "SELECT rowid, name FROM tracks\
-                       WHERE noaccents(name) LIKE ?\
-                       AND tracks.storage_type & ? LIMIT 25"
+            filters = (
+                *["%" + noaccents(term) + "%" for term in terms],
+                storage_type
+            )
+            request = \
+                "SELECT\
+                    rowid,\
+                    name,\
+                    (" + (" + ".join(["(noaccents(name) LIKE ?)" for _ in terms])) + ") AS score\
+                FROM tracks\
+                WHERE score > 0\
+                AND tracks.storage_type & ?\
+                ORDER BY score DESC\
+                LIMIT 25"
             result = sql.execute(request, filters)
             return list(result)
 

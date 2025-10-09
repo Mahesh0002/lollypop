@@ -16,7 +16,7 @@ import itertools
 from lollypop.sqlcursor import SqlCursor
 from lollypop.define import App, Type, StorageType, OrderBy, LovedFlags
 from lollypop.utils import get_default_storage_type, make_subrequest
-from lollypop.utils import format_artist_name, remove_static
+from lollypop.utils import format_artist_name, remove_static, noaccents
 
 
 class ArtistsDatabase:
@@ -399,21 +399,30 @@ class ArtistsDatabase:
                 return bool(v[0])
             return False
 
-    def search(self, searched, storage_type):
+    def search(self, terms, storage_type):
         """
             Search for artists looking like searched
-            @param searched as str without accents
+            @param terms array of strings
             @param storage_type as StorageType
             @return artist ids as [int]
         """
         with SqlCursor(self.__db) as sql:
-            filters = ("%" + searched + "%", storage_type)
-            request = "SELECT DISTINCT artists.rowid, artists.name\
+            filters = (
+                *["%" + noaccents(term) + "%" for term in terms],
+                storage_type
+            )
+            request = \
+                "SELECT\
+                    DISTINCT artists.rowid,\
+                    artists.name,\
+                    (" + (" + ".join(["(noaccents(artists.name) LIKE ?)" for _ in terms])) + ") AS score\
                    FROM albums, album_artists, artists\
                    WHERE album_artists.artist_id=artists.rowid AND\
                    album_artists.album_id=albums.rowid AND\
-                   noaccents(artists.name) LIKE ? AND\
-                   albums.storage_type & ? LIMIT 25"
+                   score > 0 AND\
+                   albums.storage_type & ? \
+                   ORDER BY score DESC\
+                   LIMIT 25"
             result = sql.execute(request, filters)
             return list(result)
 

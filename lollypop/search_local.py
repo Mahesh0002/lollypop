@@ -76,10 +76,10 @@ class LocalSearch(GObject.Object):
         split = self.__split_string(search)
         for search_str in [search] + split:
             tracks += App().tracks.search_performed(search_str, storage_type)
-            tracks += App().tracks.search(search_str, storage_type)
+            tracks += App().tracks.search([search_str], storage_type)
             if cancellable.is_cancelled():
                 break
-        for (track_id, track_name) in tracks:
+        for (track_id, track_name) in [(track[0], track[1]) for track in tracks]:
             valid = True
             no_accents = noaccents(track_name)
             if not no_accents.startswith(search):
@@ -113,10 +113,10 @@ class LocalSearch(GObject.Object):
         artist_ids = []
         split = self.__split_string(search)
         for search_str in [search] + split:
-            artists += App().artists.search(search_str, storage_type)
+            artists += App().artists.search([search_str], storage_type)
             if cancellable.is_cancelled():
                 break
-        for (artist_id, artist_name) in artists:
+        for (artist_id, artist_name) in [(artist[0], artist[1]) for artist in artists]:
             valid = True
             no_accents = noaccents(artist_name)
             if not no_accents.startswith(search):
@@ -142,10 +142,10 @@ class LocalSearch(GObject.Object):
         album_ids = []
         split = self.__split_string(search)
         for search_str in [search] + split:
-            albums += App().albums.search(search_str, storage_type)
+            albums += App().albums.search([search_str], storage_type)
             if cancellable.is_cancelled():
                 break
-        for (album_id, album_name) in albums:
+        for (album_id, album_name) in [(album[0], album[1]) for album in albums]:
             valid = True
             no_accents = noaccents(album_name)
             if not no_accents.startswith(search):

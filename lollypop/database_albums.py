@@ -17,7 +17,7 @@ from random import shuffle
 from lollypop.sqlcursor import SqlCursor
 from lollypop.define import App, Type, OrderBy, StorageType, LovedFlags
 from lollypop.logger import Logger
-from lollypop.utils import remove_static, make_subrequest
+from lollypop.utils import remove_static, make_subrequest, noaccents
 
 
 class AlbumsDatabase:
@@ -1285,18 +1285,34 @@ class AlbumsDatabase:
             result = sql.execute(request, filters)
             return list(itertools.chain(*result))
 
-    def search(self, searched, storage_type):
+    def search(self, terms, storage_type):
         """
             Search for albums looking like string
-            @param searched as str without accents
+            @param terms array of strings
             @param storage_type as StorageType
             @return album ids as [int]
         """
         with SqlCursor(self.__db) as sql:
-            filters = ("%" + searched + "%", storage_type)
-            request = "SELECT rowid, name FROM albums\
-                       WHERE noaccents(name) LIKE ?\
-                       AND albums.storage_type & ? LIMIT 25"
+            filters = (
+                *["%" + noaccents(term) + "%" for term in terms],
+                storage_type
+            )
+
+            request = \
+                "SELECT\
+                    al.rowid,\
+                    al.name,\
+                    (" + (" + ".join(["(CONCAT(noaccents(al.name), ' ', noaccents(ar.name)) LIKE ?)" for _ in terms])) + ") AS score\
+                FROM albums al\
+                INNER JOIN album_artists aa\
+                ON aa.album_id = al.id\
+                INNER JOIN artists ar\
+                ON ar.id = aa.artist_id\
+                WHERE score > 0\
+                AND al.storage_type & ?\
+                GROUP BY al.rowid\
+                ORDER BY score DESC\
+                LIMIT 25"
             result = sql.execute(request, filters)
             return list(result)
 
