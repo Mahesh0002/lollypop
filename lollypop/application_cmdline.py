@@ -160,14 +160,23 @@ class ApplicationCmdline:
                                 album = Album(album_id)
                                 self.player.add_album(album)
                                 albums.append(album)
+                            if len(ids) == 1:
+                                self.window.container.show_view([Type.ARTISTS], [artist_id])
+                                self.window.present()
                         elif id[0:3] == "al:":
                             album = Album(int(id[3:]))
                             self.player.add_album(album)
                             albums.append(album)
+                            if len(ids) == 1 and len(album.artist_ids) > 0:
+                                self.window.container.show_view([Type.ARTISTS], [album.artist_ids[0]])
+                                self.window.present()
                         else:
                             track = Track(int(id[2:]))
                             self.player.add_album(track.album)
                             albums.append(track.album)
+                            if len(ids) == 1 and len(track.album.artist_ids) > 0:
+                                self.window.container.show_view([Type.ARTISTS], [track.album.artist_ids[0]])
+                                self.window.present()
                     if albums and albums[0].tracks:
                         self.player.load(albums[0].tracks[0])
                 except Exception as e:
