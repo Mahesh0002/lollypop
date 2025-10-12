@@ -220,3 +220,43 @@ def splitUnicode(data, encoding):
         (d, t) = data, b""
     return (d, t)
 # From eyeD3 end
+
+def null_terminator_for_encoding(encoding):
+    """
+        @param encoding a byte array with one of the *_ENCODING values defined
+               in lollypop.define
+        @returns an appropriate null-terminator for given encoding as a byte-array
+    """
+    from lollypop.define import LATIN1_ENCODING, UTF_8_ENCODING
+    from lollypop.define import UTF_16_ENCODING, UTF_16BE_ENCODING
+    if encoding == LATIN1_ENCODING or encoding == UTF_8_ENCODING:
+        return b"\x00"
+    elif encoding == UTF_16_ENCODING or encoding == UTF_16BE_ENCODING:
+        return b"\x00\x00"
+    else:
+        raise ValueError("Encoding unknown: %s" % encoding)
+
+
+def split_null_terminated_unicode(data, encoding):
+    """
+        Split data at the first null-symbol appropriate for given encoding
+        @param data a binary data array extracted from a file
+        @param encoding a byte array with one of the *_ENCODING values defined
+               in lollypop.define
+        @returns a tuple of 2 subarrays of data split at the null-symboll
+        (excluding the null-termiator itself)
+    """
+    null = null_terminator_for_encoding(encoding)
+    encoding_sz = len(null)
+    if encoding_sz == 1:
+        return data.split(null, 1)
+    elif encoding_sz == 2:
+        # for UTF-16 we should iterate over pairs of bytes as it is
+        # possible that one zero is part of one symbol and ther other
+        # is of the next one
+        for i in range(0, len(data),2):
+            if data[i:i+2] == null:
+                return (data[:i], data[i+2:])
+        return (data, b"")
+    else:
+        raise ValueError("Unexpected size for encoding %s: %d" % encoding, encoding_sz)
