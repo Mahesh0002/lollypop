@@ -12,6 +12,7 @@
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 import sys
+
 # Make sure we'll find the pygobject module, even in JHBuild
 # Make sure we'll find the lollypop modules, even in JHBuild
 sys.path.insert(1, '@PYTHON_DIR@')
@@ -26,7 +27,9 @@ gi.require_version('Gdk', '3.0')
 gi.require_version('Gst', '1.0')
 from gi.repository import Gio, Gst, GLib
 
+from lollypop.define import App
 from lollypop.artwork_album import AlbumArtwork
+from lollypop.artwork_artist import ArtistArtwork
 from lollypop.settings import Settings
 from lollypop.database import Database
 from lollypop.sqlcursor import SqlCursor
@@ -164,7 +167,8 @@ class SearchLollypopService(Server, Gio.Application):
         self.albums = AlbumsDatabase(self.db)
         self.artists = ArtistsDatabase(self.db)
         self.tracks = TracksDatabase(self.db)
-        self.art = AlbumArtwork()
+        self.art_album = AlbumArtwork()
+        self.art_artist = ArtistArtwork()
         self.__bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
         Gio.bus_own_name_on_connection(self.__bus,
                                        self.__SEARCH_BUS,
@@ -193,21 +197,29 @@ class SearchLollypopService(Server, Gio.Application):
         results = []
         try:
             for search_id in ids:
-                if search_id[0:2] == "a:":
-                    album = Album(int(search_id[2:]))
-                    name = " ".join(album.artists) or " "
-                    description = album.name
-                    surface = self.art.get(
+                if search_id[0:3] == "ar:":
+                    artist = App().artists.get_name(int(search_id[3:]))
+                    name = artist
+                    description = "Artist"
+                    surface = self.art_artist.get(
+                        artist, ArtSize.BIG, ArtSize.BIG, 1)
+                    gicon = self.art_artist.get_path(
+                        artist)
+                elif search_id[0:3] == "al:":
+                    album = Album(int(search_id[3:]))
+                    name = (" ".join(album.artists) or " ") + " - " + album.name
+                    description = "Album"
+                    surface = self.art_album.get(
                         album, ArtSize.BIG, ArtSize.BIG, 1)
-                    gicon = self.art.get_cache_path(
+                    gicon = self.art_album.get_cache_path(
                         album, ArtSize.BIG, ArtSize.BIG)
                 else:
                     track = Track(int(search_id[2:]))
-                    name = "♫ " + track.name
-                    description = " ".join(track.artists) or " "
-                    surface = self.art.get(
+                    name = (" ".join(track.artists) or " ") + " - " + track.name
+                    description = "Track"
+                    surface = self.art_album.get(
                         track.album, ArtSize.BIG, ArtSize.BIG, 1)
-                    gicon = self.art.get_cache_path(
+                    gicon = self.art_album.get_cache_path(
                         track.album, ArtSize.BIG, ArtSize.BIG)
                 if surface is not None:
                     del surface
@@ -240,21 +252,21 @@ class SearchLollypopService(Server, Gio.Application):
         self.hold()
         ids = []
         search = noaccents(" ".join(terms))
+
         try:
             # Search for artists
-            for (artist_id, artist_name) in self.artists.search(search, StorageType.COLLECTION|StorageType.SAVED):
-                for album_id in self.albums.get_ids([], [artist_id], StorageType.COLLECTION|StorageType.SAVED):
-                    ids.append("a:"+str(album_id))
+            for (artist_id, artist_name, score) in self.artists.search(terms, StorageType.COLLECTION|StorageType.SAVED):
+                ids.append(("ar:"+str(artist_id), score))
             # Search for albums
-            for (album_id, album_name) in self.albums.search(search, StorageType.COLLECTION|StorageType.SAVED):
-                ids.append("a:"+str(album_id))
+            for (album_id, album_name, score) in self.albums.search(terms, StorageType.COLLECTION|StorageType.SAVED):
+                ids.append(("al:"+str(album_id), score))
             # Search for tracks
-            for (track_id, track_name) in self.tracks.search(search, StorageType.COLLECTION|StorageType.SAVED):
-                ids.append("t:"+str(track_id))
+            for (track_id, track_name, score) in self.tracks.search(terms, StorageType.COLLECTION|StorageType.SAVED):
+                ids.append(("t:"+str(track_id), score))
         except Exception as e:
             print("SearchLollypopService::__search():", e)
         self.release()
-        return ids
+        return [item[0] for item in sorted(ids, key=lambda item: item[1], reverse=True)]
 
 def main():
     Gst.init(None)
