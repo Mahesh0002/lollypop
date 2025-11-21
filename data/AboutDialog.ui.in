@@ -35,7 +35,7 @@ GNOME Project:
     unplayed-albums-symbolic
     artists-list-symbolic icons
 Martins D. Okoi:
-    Description in appdata
+    Description in metainfo
     </property>
     <property name="logo_icon_name">org.gnome.Lollypop</property>
     <property name="license_type">gpl-3-0</property>
