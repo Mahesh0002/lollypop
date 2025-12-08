@@ -1,21 +1,14 @@
 {
     "app-id": "org.gnome.Lollypop.Devel",
     "runtime": "org.gnome.Platform",
-    "runtime-version": "master",
+    "runtime-version": "48",
     "sdk": "org.gnome.Sdk",
     "command": "lollypop",
-    "rename-desktop-file": "org.gnome.Lollypop",
-    "tags" : [
-        "devel",
-        "development",
-        "nightly"
-    ],
-    "desktop-file-name-prefix" : "(Development) ",
     "finish-args": [
         "--share=ipc",
         "--share=network",
-        "--socket=fallback-x11",
         "--socket=wayland",
+        "--socket=fallback-x11",
         "--socket=pulseaudio",
         "--device=dri",
         "--filesystem=xdg-music",
@@ -32,7 +25,7 @@
     "add-extensions": {
         "org.freedesktop.Platform.ffmpeg-full": {
             "directory": "lib/ffmpeg",
-            "version": "master",
+            "version": "24.08",
             "add-ld-path": ".",
             "autodelete": false
         }
@@ -51,8 +44,18 @@
             ],
             "sources": [
                 {
-                    "type": "git",
-                    "url": "https://gitlab.freedesktop.org/gstreamer/gst-plugins-ugly.git"
+                    "type": "archive",
+                    "url": "https://gstreamer.freedesktop.org/src/gst-plugins-ugly/gst-plugins-ugly-1.20.7.tar.xz",
+                    "sha256": "e761665bb3c66fb35ff3567a283b3763b494acf0fe1df8f4abeda047b22dbc55",
+                    "x-checker-data": {
+                        "type": "anitya",
+                        "project-id": 15187,
+                        "stable-only": true,
+                        "versions": {
+                            "<": "1.21"
+                        },
+                        "url-template": "https://gstreamer.freedesktop.org/src/gst-plugins-ugly/gst-plugins-ugly-$version.tar.xz"
+                    }
                 }
             ]
         },
@@ -65,8 +68,18 @@
             ],
             "sources": [
                 {
-                    "type": "git",
-                    "url": "https://gitlab.freedesktop.org/gstreamer/gst-plugins-bad.git"
+                    "type": "archive",
+                    "url": "https://gstreamer.freedesktop.org/src/gst-plugins-bad/gst-plugins-bad-1.20.7.tar.xz",
+                    "sha256": "87251beebfd1325e5118cc67774061f6e8971761ca65a9e5957919610080d195",
+                    "x-checker-data": {
+                        "type": "anitya",
+                        "project-id": 21849,
+                        "stable-only": true,
+                        "versions": {
+                            "<": "1.21"
+                        },
+                        "url-template": "https://gstreamer.freedesktop.org/src/gst-plugins-bad/gst-plugins-bad-$version.tar.xz"
+                    }
                 }
             ]
         },
@@ -81,8 +94,14 @@
             ],
             "sources": [
                 {
-                    "type": "git",
-                    "url": "https://gitlab.gnome.org/Archive/gmime.git"
+                    "type": "archive",
+                    "url": "https://download.gnome.org/sources/gmime/3.2/gmime-3.2.7.tar.xz",
+                    "sha256": "2aea96647a468ba2160a64e17c6dc6afe674ed9ac86070624a3f584c10737d44",
+                    "x-checker-data": {
+                        "type": "anitya",
+                        "project-id": 13124,
+                        "url-template": "https://download.gnome.org/sources/gmime/3.2/gmime-$version.tar.xz"
+                    }
                 }
             ]
         },
@@ -91,8 +110,14 @@
             "buildsystem": "meson",
             "sources": [
                 {
-                    "type": "git",
-                    "url": "https://gitlab.gnome.org/GNOME/totem-pl-parser.git"
+                    "type": "archive",
+                    "url": "https://download.gnome.org/sources/totem-pl-parser/3.26/totem-pl-parser-3.26.6.tar.xz",
+                    "sha256": "c0df0f68d5cf9d7da43c81c7f13f11158358368f98c22d47722f3bd04bd3ac1c",
+                    "x-checker-data": {
+                        "type": "anitya",
+                        "project-id": 13163,
+                        "url-template": "https://download.gnome.org/sources/totem-pl-parser/3.26/totem-pl-parser-$version.tar.xz"
+                    }
                 }
             ],
             "cleanup": [
@@ -103,13 +128,16 @@
         {
             "name": "lollypop",
             "buildsystem": "meson",
-            "config-opts": [
-                "-Dprofile=development"
-            ],
             "sources": [
                 {
                     "type": "git",
-                    "url": "https://gitlab.gnome.org/World/lollypop.git"
+                    "url": "https://gitlab.gnome.org/World/lollypop.git",
+                    "tag": "1.4.44",
+                    "commit": "de7330cde7f230ae757f1a842f11e020be17cb69",
+                    "x-checker-data": {
+                        "type": "git",
+                        "tag-pattern": "^([\\d.]+)$"
+                    }
                 }
             ]
         }
