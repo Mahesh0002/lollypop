@@ -42,22 +42,22 @@ if desktop_file_validate.found()
   )
 endif
 
-# Merging the translations with the appdata file
+# Merging the translations with the metainfo file
 i18n.merge_file(
-  output: project_id + '.appdata.xml',
-  input: project_id + '.appdata.xml.in',
+  output: project_id + '.metainfo.xml',
+  input: project_id + '.metainfo.xml.in',
   po_dir: join_paths(meson.source_root(), 'subprojects/po'),
   install: true,
   install_dir: join_paths(get_option('prefix'), get_option('datadir'), 'metainfo')
 )
 
-# Validating the appdata file
+# Validating the metainfo file
 appstreamcli = find_program('appstreamcli', required: false)
 if appstreamcli.found()
   test (
-    'Validate appdata file',
+    'Validate metainfo file',
     appstreamcli,
-    args: ['validate', '--no-net', '--explain', join_paths(meson.current_build_dir (), project_id + '.appdata.xml')]
+    args: ['validate', '--no-net', '--explain', join_paths(meson.current_build_dir (), project_id + '.metainfo.xml')]
   )
 endif
 
