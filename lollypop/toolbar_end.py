@@ -217,6 +217,7 @@ class ToolbarEnd(Gtk.Bin):
             return party_ids
 
         def on_change_state(action, value, genre_id):
+            party_action = App().lookup_action("party")
             party_ids = list(App().settings.get_value("party-ids"))
             all_ids = App().genres.get_ids() + [Type.WEB]
             action.set_state(value)
@@ -232,9 +233,7 @@ class ToolbarEnd(Gtk.Bin):
                 GLib.Variant("b", all_selected))
             App().settings.set_value("party-ids",
                                      GLib.Variant("ai", party_ids))
-            App().task_helper.run(App().player.set_party_ids,
-                                  callback=(
-                                    lambda x: App().player.set_next(),))
+            party_action.change_state(GLib.Variant.new_boolean(False))
 
         # Create actions
         action = Gio.SimpleAction.new_stateful(
@@ -402,3 +401,4 @@ class ToolbarEnd(Gtk.Bin):
             self.__home_button.set_sensitive(True)
         else:
             self.__home_button.set_sensitive(False)
+
