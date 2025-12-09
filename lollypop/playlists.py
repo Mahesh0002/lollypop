@@ -665,25 +665,8 @@ class Playlists(GObject.GObject):
         # Create playlist and get id
         basename = ".".join(f.get_basename().split(".")[:-1])
         playlist_id = self.get_id(basename)
-        # Do not reimport playlists
-        if playlist_id is not None:
-            return
-        playlist_id = self.add(basename)
-        # Check mtime has been updated
-        with SqlCursor(self) as sql:
-            result = sql.execute("SELECT mtime\
-                                 FROM playlists\
-                                 WHERE rowid=?", (playlist_id,))
-            v = result.fetchone()
-            if v is not None:
-                db_mtime = v[0]
-            else:
-                db_mtime = 0
-            info = f.query_info(Gio.FILE_ATTRIBUTE_TIME_MODIFIED,
-                                Gio.FileQueryInfoFlags.NONE, None)
-            mtime = get_mtime(info)
-            if db_mtime >= mtime:
-                return
+        if playlist_id is  None:
+            playlist_id = self.add(basename)
 
         # Load playlist
         parser = TotemPlParser.Parser.new()
