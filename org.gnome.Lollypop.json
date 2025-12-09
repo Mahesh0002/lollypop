@@ -1,5 +1,5 @@
 {
-    "app-id": "org.gnome.Lollypop.Devel",
+    "app-id": "org.gnome.Lollypop",
     "runtime": "org.gnome.Platform",
     "runtime-version": "48",
     "sdk": "org.gnome.Sdk",
@@ -130,14 +130,8 @@
             "buildsystem": "meson",
             "sources": [
                 {
-                    "type": "git",
-                    "url": "https://gitlab.gnome.org/World/lollypop.git",
-                    "tag": "1.4.44",
-                    "commit": "de7330cde7f230ae757f1a842f11e020be17cb69",
-                    "x-checker-data": {
-                        "type": "git",
-                        "tag-pattern": "^([\\d.]+)$"
-                    }
+                    "type": "dir",
+                    "path": "."
                 }
             ]
         }
