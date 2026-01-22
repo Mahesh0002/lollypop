@@ -178,6 +178,8 @@ class Playlists(GObject.GObject):
             @param uri as str
             @param signal as bool
         """
+        if uri is None:
+            return
         if self.exists_track(playlist_id, uri):
             return
         with SqlCursor(self, True) as sql:
