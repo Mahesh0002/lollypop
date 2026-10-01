@@ -134,6 +134,7 @@ class Database:
         f = Gio.File.new_for_path(self.DB_PATH)
         upgrade = DatabaseAlbumsUpgrade()
         if not f.query_exists():
+            print(self.DB_PATH)
             try:
                 d = Gio.File.new_for_path(LOLLYPOP_DATA_PATH)
                 if not d.query_exists():

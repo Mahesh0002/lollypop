@@ -1,7 +1,7 @@
 {
-    "app-id": "org.gnome.Lollypop",
+    "app-id": "org.gnome.Lollypop.Devel",
     "runtime": "org.gnome.Platform",
-    "runtime-version": "48",
+    "runtime-version": "51",
     "sdk": "org.gnome.Sdk",
     "command": "lollypop",
     "finish-args": [
@@ -12,77 +12,14 @@
         "--socket=pulseaudio",
         "--device=dri",
         "--filesystem=xdg-music",
-        "--filesystem=xdg-run/gvfs",
-        "--filesystem=xdg-run/gvfsd",
-        "--talk-name=org.gtk.vfs.*",
         "--talk-name=org.freedesktop.Notifications",
-        "--talk-name=org.freedesktop.secrets",
         "--talk-name=org.freedesktop.Flatpak",
-        "--talk-name=org.gnome.OnlineAccounts",
+        "--talk-name=org.freedesktop.secrets",
         "--own-name=org.mpris.MediaPlayer2.Lollypop",
         "--metadata=X-DConf=migrate-path=/org/gnome/Lollypop/"
     ],
-    "add-extensions": {
-        "org.freedesktop.Platform.ffmpeg-full": {
-            "directory": "lib/ffmpeg",
-            "version": "24.08",
-            "add-ld-path": ".",
-            "autodelete": false
-        }
-    },
-    "cleanup-commands": [
-        "mkdir -p /app/lib/ffmpeg"
-    ],
     "modules": [
         "pypi-dependencies.json",
-        {
-            "name": "gst-plugins-ugly",
-            "buildsystem": "meson",
-            "cleanup": [
-                "*.la",
-                "/share/gtk-doc"
-            ],
-            "sources": [
-                {
-                    "type": "archive",
-                    "url": "https://gstreamer.freedesktop.org/src/gst-plugins-ugly/gst-plugins-ugly-1.20.7.tar.xz",
-                    "sha256": "e761665bb3c66fb35ff3567a283b3763b494acf0fe1df8f4abeda047b22dbc55",
-                    "x-checker-data": {
-                        "type": "anitya",
-                        "project-id": 15187,
-                        "stable-only": true,
-                        "versions": {
-                            "<": "1.21"
-                        },
-                        "url-template": "https://gstreamer.freedesktop.org/src/gst-plugins-ugly/gst-plugins-ugly-$version.tar.xz"
-                    }
-                }
-            ]
-        },
-        {
-            "name": "gst-plugins-bad",
-            "buildsystem": "meson",
-            "cleanup": [
-                "*.la",
-                "/share/gtk-doc"
-            ],
-            "sources": [
-                {
-                    "type": "archive",
-                    "url": "https://gstreamer.freedesktop.org/src/gst-plugins-bad/gst-plugins-bad-1.20.7.tar.xz",
-                    "sha256": "87251beebfd1325e5118cc67774061f6e8971761ca65a9e5957919610080d195",
-                    "x-checker-data": {
-                        "type": "anitya",
-                        "project-id": 21849,
-                        "stable-only": true,
-                        "versions": {
-                            "<": "1.21"
-                        },
-                        "url-template": "https://gstreamer.freedesktop.org/src/gst-plugins-bad/gst-plugins-bad-$version.tar.xz"
-                    }
-                }
-            ]
-        },
         {
             "name": "gmime",
             "config-opts": [
@@ -111,8 +48,8 @@
             "sources": [
                 {
                     "type": "archive",
-                    "url": "https://download.gnome.org/sources/totem-pl-parser/3.26/totem-pl-parser-3.26.6.tar.xz",
-                    "sha256": "c0df0f68d5cf9d7da43c81c7f13f11158358368f98c22d47722f3bd04bd3ac1c",
+                    "url": "https://download.gnome.org/sources/totem-pl-parser/3.26/totem-pl-parser-3.26.7.tar.xz",
+                    "sha256": "60d517c1acabe54ae337f64451264fc76730696eaae26b5480fb37166689b5f3",
                     "x-checker-data": {
                         "type": "anitya",
                         "project-id": 13163,
@@ -126,12 +63,41 @@
             ]
         },
         {
-            "name": "lollypop",
+            "name": "libhandy",
             "buildsystem": "meson",
             "sources": [
                 {
-                    "type": "dir",
-                    "path": "."
+                    "type": "archive",
+                    "url": "https://download.gnome.org/sources/libhandy/1.8/libhandy-1.8.3.tar.xz",
+                    "sha256": "05b497229073ff557f10b326e074c5066f8743a302d4820ab97bcb5cd2dab087",
+                    "x-checker-data": {
+                        "type": "anitya",
+                        "project-id": 13163,
+                        "url-template": "https://download.gnome.org/sources/libhandy/1.8/libhandy-$version.tar.xz"
+                    }
+                }
+            ],
+            "cleanup": [
+                "/include",
+                "/share/gtk-doc"
+            ]
+        },
+        {
+            "name": "lollypop",
+            "buildsystem": "meson",
+            "config-opts": [
+                "-Dprofile=development"
+            ],
+            "sources": [
+                {
+                    "type": "git",
+                    "url": "https://gitlab.gnome.org/World/lollypop.git",
+                    "tag": "1.4.45",
+                    "commit": "f97055c225027305514aceeb517738ebdff109a3",
+                    "x-checker-data": {
+                        "type": "git",
+                        "tag-pattern": "^([\\d.]+)$"
+                    }
                 }
             ]
         }

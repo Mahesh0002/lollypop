@@ -387,3 +387,4 @@ class Application(Gtk.Application, ApplicationActions, ApplicationCmdline):
             @param application as Gio.Application
         """
         self.__window.present()
+

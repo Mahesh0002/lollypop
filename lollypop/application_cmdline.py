@@ -243,3 +243,4 @@ class ApplicationCmdline:
             @param audio_uris as str
         """
         audio_uris.append(uri)
+
