@@ -32,6 +32,7 @@ class SearchBannerWidget(BannerWidget):
         self.__menu = builder.get_object("menu")
         self.__spinner = builder.get_object("spinner")
         self.__entry = builder.get_object("entry")
+        self.__entry.get_style_context().add_class("default-banner")
         widget = builder.get_object("widget")
         self._overlay.add_overlay(widget)
         self._overlay.set_overlay_pass_through(widget, True)
