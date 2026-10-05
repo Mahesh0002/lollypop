@@ -239,7 +239,8 @@ def sql_escape(string):
     v = u"".join([c for c in nfkd_form if not unicodedata.combining(c)])
     return "".join([c for c in v if
                     c.isalpha() or
-                    c.isdigit()]).rstrip().lower()
+                    c.isdigit() or
+                    unicodedata.category(c).startswith("So")]).rstrip().lower()
 
 
 def escape(str, ignore=["_", "-", " ", "."]):
