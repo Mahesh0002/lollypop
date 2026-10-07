@@ -1,4 +1,5 @@
 *~
+/subprojects/.wraplock
 /.flatpak-builder
 /lollypop-cli
 /*.bak
