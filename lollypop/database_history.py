@@ -150,7 +150,7 @@ class History:
             Return a new sqlite cursor
         """
         try:
-            return sqlite3.connect(self.__DB_PATH, 600.0)
+            return sqlite3.connect(self.__DB_PATH, timeout=600.0)
         except:
             exit(-1)
 

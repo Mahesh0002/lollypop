@@ -206,7 +206,7 @@ class Database:
             Return a new sqlite cursor
         """
         try:
-            c = sqlite3.connect(self.DB_PATH, 600.0)
+            c = sqlite3.connect(self.DB_PATH, timeout=600.0)
             c.create_collation("LOCALIZED", LocalizedCollation())
             c.create_function("noaccents", 1, noaccents)
             c.create_function("sql_escape", 1, sql_escape)

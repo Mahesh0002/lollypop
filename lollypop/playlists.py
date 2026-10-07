@@ -684,7 +684,7 @@ class Playlists(GObject.GObject):
             Return a new sqlite cursor
         """
         try:
-            sql = sqlite3.connect(self._DB_PATH, 600.0)
+            sql = sqlite3.connect(self._DB_PATH, timeout=600.0)
             sql.execute('ATTACH DATABASE "%s" AS music' % Database.DB_PATH)
             sql.create_collation("LOCALIZED", LocalizedCollation())
             return sql

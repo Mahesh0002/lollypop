@@ -120,7 +120,7 @@ class CacheDatabase:
             Return a new sqlite cursor
         """
         try:
-            c = sqlite3.connect(self.DB_PATH, 600.0)
+            c = sqlite3.connect(self.DB_PATH, timeout=600.0)
             return c
         except:
             exit(-1)
