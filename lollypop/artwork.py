@@ -45,8 +45,8 @@ class Artwork(ArtworkManager):
         """
         try:
             encoded = md5(name.encode("utf-8")).hexdigest()
-            width = surface.get_width() * scale_factor
-            height = surface.get_height() * scale_factor
+            width = surface.get_width()
+            height = surface.get_height()
             cache_path = "%s/@%s@%s_%s_%s" % (CACHE_PATH,
                                               prefix,
                                               encoded,
