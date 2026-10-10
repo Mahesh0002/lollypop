@@ -21,9 +21,9 @@
     </ul>
   </description>
   <releases>
-    <release version="1.4.45" date="2025-12-09">
+    <release version="1.4.48" date="2026-10-10">
       <description>
-	    <p>Bug fixes release</p>
+	  <p>Fix a crash when opening genres/playlists view</p>
       </description>
     </release>
   </releases>
