@@ -40,6 +40,7 @@ class ShownLists:
         Type.CURRENT: _("Playing albums"),
         Type.INFO: _("Information"),
         Type.COMPILATIONS: _("Compilations"),
+        Type.TRACKS: _("Songs"),
     }
 
     def get(mask, get_all=False):

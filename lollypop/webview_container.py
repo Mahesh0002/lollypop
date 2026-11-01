@@ -381,11 +381,43 @@ class WebViewContainer(Gtk.Box):
                 self.__load_album_detail(target_id)
             elif view == "tracks" and target_id:
                 self.__load_album_tracks(target_id)
+            elif view == "tracks" and not target_id:
+                self.__load_all_tracks()
             elif view == "search" and payload.get("query"):
                 self.__search(payload["query"])
             # Other views can be added as needed
         except Exception as e:
             Logger.error("WebViewContainer::__on_navigate(): %s", e)
+
+    def __load_all_tracks(self):
+        """Load all tracks for the Songs view"""
+        try:
+            track_ids = App().tracks.get_ids([], [],
+                                              StorageType.COLLECTION |
+                                              StorageType.SAVED)
+            tracks = []
+            for track_id in track_ids:
+                try:
+                    track = Track(track_id)
+                    if track and track.id:
+                        tracks.append({
+                            "id": track.id,
+                            "name": track.name,
+                            "artists": track.artists,
+                            "album": track.album_name,
+                            "duration": track.duration,
+                            "track_number": track.tracknumber,
+                            "disc_number": track.discnumber,
+                        })
+                except Exception:
+                    continue
+
+            self.__ipc.send({
+                "type": "ALL_TRACKS_LOADED",
+                "payload": {"tracks": tracks}
+            })
+        except Exception as e:
+            Logger.error("WebViewContainer::__load_all_tracks(): %s", e)
 
     def __load_album_detail(self, album_id):
         """Load album details and tracks for AlbumDetailPage"""

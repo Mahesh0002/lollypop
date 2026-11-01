@@ -1,0 +1,42 @@
+**Global Styling & UI Mechanics**
+
+* **Ambient Backdrop:** A deep, dark base layout featuring a subtle, glassmorphic color bleed that dynamically matches the currently playing track's artwork.
+* **Card & Container Geometry:** Consistent use of heavy rounded corners (approx. 12px to 16px `border-radius`) and soft, elevated drop shadows on all album covers and floating panels.
+* **Typography:** Clean, sans-serif font with strong visual hierarchy (bright white for active/primary text, muted gray for secondary text/metrics).
+
+**1. Left Navigation Sidebar (Library & Playlists)**
+
+* **Window Controls:** Standard macOS-style traffic light dots (close, minimize, maximize) in the top left.
+* **Brand/Logo:** A minimalist equalizer/wave icon.
+* **Primary Navigation:** Home (active state highlighted with a primary-color gradient pill), Search, and Your Library.
+* **Library Section:** Liked Songs (with track count metadata), Albums, Artists.
+* **Playlists (Collapsible List):** Displays playlist cover art, title, and track count. Includes a "+ New Playlist" action button.
+* **Sidebar Mini-Player (Bottom Left):** A secondary compact display showing the current track's album art, title, artist, and a "Like" (heart) toggle.
+
+**2. Top Headerbar (Search & Profile)**
+
+* **Navigation:** Back and Forward history arrows.
+* **Global Search:** A wide, pill-shaped search bar with placeholder text ("Search songs, artists, albums, playlists...").
+* **User Actions:** Notification bell, Equalizer/Settings icon, and a user profile pill featuring an avatar, username, and dropdown caret.
+
+**3. Main Content Area (Dynamic Browsing Grid)**
+
+* **Hero Banner:** A large, rounded billboard featuring a personalized greeting, tagline, a prominent primary-colored "Play" button, and pagination dots indicating a carousel.
+* **"Recently Played" Section:** A horizontal row of square album art cards. Hovering or active states feature a blurred, floating play button overlay. Includes a three-dot context menu and "See all ->" routing.
+* **"Your Top Artists" Section:** A horizontal row of circular artist avatars with follower count metadata beneath the names.
+* **"Recently Added" Section:** Landscape/rectangular cards for broader categorization or varying media types.
+
+**4. Right 'Now Playing' Panel (Inspector & Lyrics)**
+
+* **Badges:** "Now Playing" header and a "Lossless" audio quality badge.
+* **Dynamic Visualizer:** A large, circular, glowing audio visualizer responding to the track's frequencies.
+* **Metadata & Quick Actions:** Centered album art thumbnail, title, artist, heart toggle, and three-dot context menu.
+* **Playback Controls (Panel):** Shuffle, Previous, Play/Pause (prominently circled), Next, Repeat.
+* **Context Tabs:** Lyrics, Info, and Queue.
+* **Synced Lyrics:** Active line highlighted in bright white/primary color; upcoming lines dimmed in gray.
+
+**5. Global Bottom Bar (Persistent Player)**
+
+* **Waveform Timeline:** A sleek, linear scrubber displaying a miniature audio waveform instead of a flat line, flanked by current timestamp and total duration.
+* **Playback Controls (Footer):** Redundant core controls for quick access across any view.
+* **Audio Routing:** Queue list toggle, Device casting icon, Volume icon, and a linear volume slider.

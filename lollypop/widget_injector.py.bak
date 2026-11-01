@@ -1,0 +1,922 @@
+#!/usr/bin/env python3
+"""Lollypop Now Playing side panel: artwork, metadata, lyrics, queue.
+
+The panel sits in a Gtk.Revealer. A toggle button in Lollypop's header bar
+opens it; the panel's own close button hides it.
+
+Artwork:  embedded tag art -> cover.jpg etc. in the folder -> backend
+          api_fetcher (network, worker thread)
+Lyrics:   FLAC/ID3/MP4 tags -> local cache -> backend api_fetcher (network)
+Palette:  color_extractor, computed from whichever artwork file was found.
+
+Nothing is loaded while the panel is hidden.
+"""
+
+import hashlib
+import os
+import re
+import sys
+import threading
+import traceback
+from collections import namedtuple
+from concurrent.futures import ThreadPoolExecutor
+
+import gi
+
+gi.require_version("Gtk", "3.0")
+gi.require_version("GdkPixbuf", "2.0")
+
+from gi.repository import GdkPixbuf, GLib, Gtk, Pango
+
+PREFIX = "[Lollypop Extension]"
+
+
+def _log(*args):
+    print(PREFIX, *args, flush=True)
+
+
+try:
+    from color_extractor import PaletteStyler, extract_palette
+except Exception:
+    PaletteStyler = None
+    extract_palette = None
+    _log("Color module unavailable:")
+    traceback.print_exc()
+
+
+# ---------------------------------------------------------------- config
+
+UI_DIR = os.path.dirname(os.path.abspath(__file__))
+BACKEND_DIR = os.environ.get(
+    "LOLLYPOP_EXT_BACKEND_DIR",
+    os.path.join(os.path.dirname(UI_DIR), "backend"),
+)
+
+CACHE_DIR = os.path.expanduser("~/.cache/lollypop-extension")
+EMBEDDED_ART_DIR = os.path.join(CACHE_DIR, "artwork")
+ONLINE_ART_DIR = os.path.join(CACHE_DIR, "online-artwork")
+LYRICS_DIR = os.path.join(CACHE_DIR, "lyrics")
+
+IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".bmp")
+COVER_STEMS = ("cover", "folder", "front", "album")
+
+PANEL_WIDTH = 340
+ART_SIZE = 220
+
+
+# ---------------------------------------------------------------- backend
+
+_backend_lock = threading.Lock()
+_backend = None
+_backend_failed = False
+
+
+def _api():
+    """Import the backend api_fetcher lazily (worker thread). None if broken."""
+    global _backend, _backend_failed
+    with _backend_lock:
+        if _backend is not None or _backend_failed:
+            return _backend
+        try:
+            if BACKEND_DIR not in sys.path:
+                sys.path.append(BACKEND_DIR)
+            import api_fetcher
+
+            _backend = api_fetcher
+        except Exception as exc:
+            _backend_failed = True
+            _log(
+                f"Backend api_fetcher unavailable ({exc!r}). Online artwork "
+                f"and lyrics are disabled. Backend dir: {BACKEND_DIR}. "
+                "Lollypop's Python needs 'requests' and 'musicbrainzngs'."
+            )
+        return _backend
+
+
+# ---------------------------------------------------------------- helpers
+
+TrackInfo = namedtuple(
+    "TrackInfo", "has_track title artist primary_artist album audio_path"
+)
+EMPTY_INFO = TrackInfo(False, "", "", "", "", None)
+
+
+def _attr(obj, names):
+    """First non-empty, non-callable attribute (Lollypop Base returns None
+    for unknown names, so this is safe on Track/Album)."""
+    if obj is None:
+        return None
+    for name in names:
+        try:
+            value = getattr(obj, name, None)
+            if value is not None and value != "" and not callable(value):
+                return value
+        except Exception:
+            pass
+    return None
+
+
+def _local_path(value):
+    """Existing local file path from a path or file:// URI, else None."""
+    import urllib.parse
+
+    if not value:
+        return None
+    try:
+        value = os.fspath(value)
+    except TypeError:
+        value = str(value)
+    if value.startswith("file://"):
+        value = urllib.parse.unquote(urllib.parse.urlparse(value).path)
+    elif "://" in value:
+        return None
+    if not os.path.isabs(value):
+        return None
+    value = os.path.realpath(value)
+    return value if os.path.isfile(value) else None
+
+
+def _track_info(track):
+    """Plain-data snapshot of the Lollypop Track (main thread)."""
+    if track is None or getattr(track, "id", None) is None:
+        return EMPTY_INFO
+
+    artists = _attr(track, ("artists",)) or []
+    if isinstance(artists, str):
+        artists = [artists]
+    artists = [str(a).strip() for a in artists if str(a).strip()]
+
+    album = _attr(track, ("album_name",))
+    if not album:
+        album = _attr(_attr(track, ("album",)), ("name", "title"))
+
+    return TrackInfo(
+        True,
+        str(_attr(track, ("name", "title")) or "").strip(),
+        ", ".join(artists),
+        artists[0] if artists else "",
+        str(album or "").strip(),
+        _local_path(_attr(track, ("path", "uri"))),
+    )
+
+
+def _image_ext(data, mime=None):
+    if data.startswith(b"\xff\xd8\xff"):
+        return ".jpg"
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return ".png"
+    if data.startswith(b"RIFF") and data[8:12] == b"WEBP":
+        return ".webp"
+    if data.startswith(b"BM"):
+        return ".bmp"
+    return {
+        "image/jpeg": ".jpg", "image/jpg": ".jpg", "image/png": ".png",
+        "image/webp": ".webp", "image/bmp": ".bmp",
+    }.get((mime or "").lower(), ".img")
+
+
+def _cache_image_bytes(directory, data, mime=None):
+    """Write image bytes to a content-hashed file; returns its path."""
+    if not data:
+        return None
+    try:
+        os.makedirs(directory, exist_ok=True)
+        data = bytes(data)
+        name = hashlib.sha256(data).hexdigest()[:32] + _image_ext(data, mime)
+        path = os.path.join(directory, name)
+        if os.path.isfile(path) and os.path.getsize(path) == len(data):
+            return path
+        tmp = path + ".tmp"
+        with open(tmp, "wb") as handle:
+            handle.write(data)
+        os.replace(tmp, path)
+        return path
+    except OSError as exc:
+        _log("Artwork cache error:", exc)
+        return None
+
+
+# ---------------------------------------------------------------- artwork
+
+_mutagen_warned = False
+
+
+def _embedded_art(audio_path):
+    """Embedded cover from FLAC / MP3 (ID3) / MP4 / Ogg via mutagen."""
+    global _mutagen_warned
+    if not audio_path:
+        return None
+    try:
+        from mutagen import File as MutagenFile
+    except ImportError:
+        if not _mutagen_warned:
+            _mutagen_warned = True
+            _log("Install python-mutagen for embedded artwork.")
+        return None
+
+    try:
+        audio = MutagenFile(audio_path)
+        if audio is None:
+            return None
+
+        data = mime = None
+
+        # FLAC picture blocks (prefer type 3 = front cover).
+        pictures = getattr(audio, "pictures", None)
+        if pictures:
+            front = [p for p in pictures if getattr(p, "type", None) == 3]
+            picture = (front or pictures)[0]
+            data, mime = picture.data, picture.mime
+
+        tags = getattr(audio, "tags", None)
+
+        # MP3 ID3 APIC frames.
+        if not data and tags is not None and callable(getattr(tags, "getall", None)):
+            frames = tags.getall("APIC")
+            if frames:
+                front = [f for f in frames if getattr(f, "type", None) == 3]
+                frame = (front or frames)[0]
+                data, mime = frame.data, frame.mime
+
+        # MP4 / M4A.
+        if not data and tags is not None:
+            try:
+                covers = tags.get("covr")
+            except Exception:
+                covers = None
+            if covers:
+                data = bytes(covers[0])
+
+        # Ogg/Opus base64 picture block.
+        if not data and tags is not None:
+            try:
+                import base64
+                from mutagen.flac import Picture
+
+                encoded = tags.get("metadata_block_picture")
+                if encoded:
+                    item = encoded[0]
+                    if isinstance(item, str):
+                        item = item.encode("ascii")
+                    picture = Picture(base64.b64decode(item))
+                    data, mime = picture.data, picture.mime
+            except Exception:
+                pass
+
+        return _cache_image_bytes(EMBEDDED_ART_DIR, data, mime)
+    except Exception as exc:
+        _log("Embedded artwork extraction failed:", exc)
+        return None
+
+
+def _folder_cover(audio_path):
+    """cover/folder/front/album.(jpg|png|...) next to the audio file,
+    matched case-insensitively."""
+    if not audio_path:
+        return None
+    folder = os.path.dirname(audio_path)
+    try:
+        names = {n.lower(): n for n in os.listdir(folder)}
+    except OSError:
+        return None
+    for stem in COVER_STEMS:
+        for ext in IMAGE_EXTENSIONS:
+            name = names.get(stem + ext)
+            if name:
+                path = os.path.join(folder, name)
+                if os.path.isfile(path):
+                    return path
+    return None
+
+
+_online_art_misses = set()
+
+
+def _online_artwork(info):
+    """Backend lookup (iTunes via api_fetcher). Blocking: worker thread only.
+    Saved under ~/.cache, never into the user's music folders."""
+    api = _api()
+    if api is None or not info.primary_artist or api.is_unknown(info.primary_artist):
+        return None
+
+    key = (info.primary_artist.casefold(), info.album.casefold(), info.title.casefold())
+    if key in _online_art_misses:
+        return None
+
+    album = info.album
+    if album and not api.is_unknown(album) and album.casefold() != "singles":
+        folder = os.path.join(
+            ONLINE_ART_DIR,
+            hashlib.sha1(
+                f"{info.primary_artist}|{album}".casefold().encode("utf-8")
+            ).hexdigest()[:20],
+        )
+        os.makedirs(folder, exist_ok=True)
+        path = api.fetch_album_cover(info.primary_artist, album, folder)
+        if path and os.path.isfile(path):
+            return path
+
+    if info.title:
+        data = api.fetch_song_art(info.primary_artist, info.title)
+        path = _cache_image_bytes(ONLINE_ART_DIR, data)
+        if path:
+            return path
+
+    _online_art_misses.add(key)
+    return None
+
+
+# ---------------------------------------------------------------- lyrics
+
+_LRC_TIME = re.compile(r"\[\d{1,3}:\d{2}(?:[.:]\d{1,3})?\]")
+_LRC_META = re.compile(r"^\s*\[[A-Za-z]+:[^\]]*\]\s*$")
+
+
+def _plain_lyrics(text):
+    """Strip LRC timestamps/metadata for simple display."""
+    lines = []
+    for line in (text or "").splitlines():
+        if _LRC_META.match(line):
+            continue
+        lines.append(_LRC_TIME.sub("", line).strip())
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+
+
+def _tag_lyrics(audio_path):
+    """Lyrics embedded in the file: LRC / LYRICS (Vorbis), USLT (ID3), ©lyr (MP4)."""
+    if not audio_path:
+        return None
+    try:
+        from mutagen import File as MutagenFile
+
+        audio = MutagenFile(audio_path)
+        tags = getattr(audio, "tags", None) if audio is not None else None
+        if tags is None:
+            return None
+
+        getall = getattr(tags, "getall", None)
+        if callable(getall):
+            for frame in getall("USLT"):
+                text = str(getattr(frame, "text", "")).strip()
+                if text:
+                    return text
+
+        for key in ("LRC", "LYRICS", "UNSYNCEDLYRICS", "\xa9lyr"):
+            try:
+                value = tags.get(key)
+            except Exception:
+                value = None
+            if not value:
+                continue
+            if isinstance(value, (list, tuple)):
+                value = "\n".join(str(v) for v in value)
+            value = str(value).strip()
+            if value:
+                return value
+    except Exception as exc:
+        _log("Lyrics tag read failed:", exc)
+    return None
+
+
+def _lyrics_cache_path(info):
+    digest = hashlib.sha1(
+        f"{info.primary_artist}|{info.title}".casefold().encode("utf-8")
+    ).hexdigest()
+    return os.path.join(LYRICS_DIR, digest + ".txt")
+
+
+def _cached_lyrics(info):
+    try:
+        with open(_lyrics_cache_path(info), encoding="utf-8") as handle:
+            return handle.read().strip() or None
+    except OSError:
+        return None
+
+
+_online_lyrics_misses = set()
+
+
+def _online_lyrics(info):
+    """LRCLIB via api_fetcher. Blocking: worker thread only."""
+    api = _api()
+    if api is None or not info.primary_artist or not info.title:
+        return None
+
+    key = (info.primary_artist.casefold(), info.title.casefold())
+    if key in _online_lyrics_misses:
+        return None
+
+    text = api.fetch_synced_lyrics(info.primary_artist, info.title)
+    if text and text.strip():
+        try:
+            os.makedirs(LYRICS_DIR, exist_ok=True)
+            with open(_lyrics_cache_path(info), "w", encoding="utf-8") as handle:
+                handle.write(text.strip())
+        except OSError as exc:
+            _log("Lyrics cache write failed:", exc)
+        return text.strip()
+
+    _online_lyrics_misses.add(key)
+    return None
+
+
+# ---------------------------------------------------------------- widgets
+
+def _heading(text):
+    label = Gtk.Label(label=text)
+    label.set_name("right-panel-heading")
+    label.set_xalign(0)
+    return label
+
+
+def _add(box, child, expand=False, fill=None):
+    child.show()
+    box.pack_start(child, expand, expand if fill is None else fill, 0)
+
+
+class AlbumArtwork(Gtk.Box):
+    def __init__(self, size=ART_SIZE):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        self.size = size
+        self._key = None
+        self.set_name("right-panel-artwork-frame")
+        self.set_halign(Gtk.Align.CENTER)
+        self.set_size_request(size, size)
+
+        self.image = Gtk.Image()
+        self.image.set_name("right-panel-artwork")
+        self.image.set_size_request(size, size)
+        self.image.set_from_icon_name("audio-x-generic", Gtk.IconSize.DIALOG)
+        _add(self, self.image, expand=True)
+
+    def set_artwork(self, path):
+        """Show an image file (None -> placeholder). True if an image shows."""
+        if path:
+            try:
+                key = (path, os.path.getmtime(path))
+            except OSError:
+                key = None
+            if key is not None and key == self._key:
+                return True
+            try:
+                pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(
+                    path, self.size, self.size, True
+                )
+                self.image.set_from_pixbuf(pixbuf)
+                self._key = key
+                return True
+            except Exception as exc:
+                _log("Artwork decode failed:", path, exc)
+
+        self._key = None
+        self.image.set_from_icon_name("audio-x-generic", Gtk.IconSize.DIALOG)
+        return False
+
+
+class TrackInformation(Gtk.Box):
+    def __init__(self):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=5)
+        self.set_name("right-panel-track-info")
+
+        self.title = Gtk.Label(label="Nothing playing")
+        self.title.set_name("right-panel-title")
+        self.title.set_xalign(0)
+        self.title.set_line_wrap(True)
+        self.title.set_max_width_chars(32)
+
+        self.artist = Gtk.Label(label="")
+        self.artist.set_name("right-panel-artist")
+        self.artist.set_xalign(0)
+        self.artist.set_ellipsize(Pango.EllipsizeMode.END)
+
+        self.album = Gtk.Label(label="")
+        self.album.set_name("right-panel-album")
+        self.album.set_xalign(0)
+        self.album.set_ellipsize(Pango.EllipsizeMode.END)
+
+        for child in (self.title, self.artist, self.album):
+            child.set_margin_start(8)
+            child.set_margin_end(8)
+            _add(self, child)
+
+    def update(self, title, artist, album):
+        self.title.set_text(title or "Nothing playing")
+        self.artist.set_text(artist or "")
+        self.album.set_text(album or "")
+
+
+class LyricsSection(Gtk.Box):
+    """Plain scrolling lyrics (timestamps stripped). Synced mode comes later."""
+
+    def __init__(self):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self.set_name("right-panel-lyrics-container")
+        self.set_margin_start(2)
+        self.set_margin_end(2)
+
+        heading = _heading("LYRICS")
+        heading.set_margin_start(8)
+        heading.set_margin_top(6)
+        _add(self, heading)
+
+        self.scroller = Gtk.ScrolledWindow()
+        self.scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        self.scroller.set_min_content_height(110)
+        self.scroller.set_vexpand(True)
+
+        self.label = Gtk.Label(label="")
+        self.label.set_name("right-panel-lyrics")
+        self.label.set_xalign(0)
+        self.label.set_yalign(0)
+        self.label.set_line_wrap(True)
+        self.label.set_line_wrap_mode(Pango.WrapMode.WORD_CHAR)
+        self.label.set_margin_start(8)
+        self.label.set_margin_end(8)
+        self.label.set_margin_bottom(8)
+        self.label.show()
+        self.scroller.add(self.label)
+        _add(self, self.scroller, expand=True)
+
+    def _to_top(self):
+        self.scroller.get_vadjustment().set_value(0)
+
+    def set_message(self, text):
+        self.label.set_text(text)
+        self._to_top()
+
+    def set_lyrics(self, text):
+        plain = _plain_lyrics(text) if text else ""
+        self.label.set_text(plain or "No lyrics found.")
+        self._to_top()
+
+
+class QueueSection(Gtk.Box):
+    """Embeds Lollypop's native queue view."""
+
+    def __init__(self):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self.set_name("right-panel-queue-container")
+        self.set_margin_start(2)
+        self.set_margin_end(2)
+
+        heading = _heading("UP NEXT")
+        heading.set_margin_start(8)
+        heading.set_margin_top(6)
+        _add(self, heading)
+
+        self.scroller = Gtk.ScrolledWindow()
+        # AUTOMATIC horizontally: a NEVER policy would propagate the child's
+        # minimum width and stretch the panel.
+        self.scroller.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        self.scroller.set_min_content_height(90)
+        self.scroller.set_vexpand(True)
+        _add(self, self.scroller, expand=True)
+
+        self.queue_view = None
+        try:
+            from lollypop.view_tracks_queue import QueueTracksView
+
+            self.queue_view = QueueTracksView()
+            self._unclamp_width(self.queue_view)
+            self.queue_view.set_hexpand(True)
+            self.queue_view.show()
+            self.scroller.add(self.queue_view)
+            # The view tracks queue-changed itself; load existing entries ONCE.
+            # (Calling populate() again would duplicate every row.)
+            GLib.idle_add(self._populate_once)
+        except Exception:
+            _log("Native queue view unavailable:")
+            traceback.print_exc()
+            label = Gtk.Label(label="The native queue view is unavailable.")
+            label.set_line_wrap(True)
+            label.set_xalign(0)
+            label.show()
+            self.scroller.add(label)
+
+    @staticmethod
+    def _unclamp_width(view):
+        """QueueTracksView forces its ListBox to exactly Size.SMALL (500 px),
+        which would blow past the panel width. Reset it."""
+        try:
+            box = getattr(view, "_QueueTracksView__box", None)
+            if box is not None:
+                box.set_width(0)
+                box.set_halign(Gtk.Align.FILL)
+            grid = getattr(view, "_QueueTracksView__grid", None)
+            if grid is not None:
+                grid.set_halign(Gtk.Align.FILL)
+        except Exception:
+            _log("Could not reset queue view width:")
+            traceback.print_exc()
+
+    def _populate_once(self):
+        try:
+            populate = getattr(self.queue_view, "populate", None)
+            if callable(populate):
+                populate()
+        except Exception:
+            _log("Queue populate failed:")
+            traceback.print_exc()
+        return False
+
+
+class RightPanel(Gtk.Box):
+    def __init__(self):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        self.set_name("right-panel")
+        self.set_size_request(PANEL_WIDTH, -1)
+        self.set_hexpand(False)
+        self.set_vexpand(True)
+        self.set_margin_start(10)
+        self.set_margin_end(10)
+        self.set_margin_top(10)
+        self.set_margin_bottom(10)
+
+        self._active = False
+        self._destroyed = False
+        self._last_key = None
+        self._token = 0
+        self._player = None
+        self._signal_ids = []
+        self._executor = ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="lollypop-ext"
+        )
+        self._styler = PaletteStyler() if PaletteStyler else None
+
+        # Header: title + close button.
+        header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        header.set_name("right-panel-header")
+        title = _heading("NOW PLAYING")
+        title.set_hexpand(True)
+        title.set_margin_start(8)
+        _add(header, title, expand=True)
+
+        self.close_button = Gtk.Button.new_from_icon_name(
+            "window-close-symbolic", Gtk.IconSize.BUTTON
+        )
+        self.close_button.set_name("right-panel-close")
+        self.close_button.set_relief(Gtk.ReliefStyle.NONE)
+        self.close_button.set_tooltip_text("Close panel")
+        _add(header, self.close_button)
+        _add(self, header)
+
+        self.artwork = AlbumArtwork()
+        _add(self, self.artwork)
+
+        self.info = TrackInformation()
+        _add(self, self.info)
+
+        self.lyrics = LyricsSection()
+        _add(self, self.lyrics, expand=True)
+
+        self.queue = QueueSection()
+        _add(self, self.queue, expand=True)
+
+        self._apply_palette(None)
+        self._connect_player()
+        self.connect("destroy", self._on_destroy)
+
+    # ------------------------------------------------------------ player
+
+    def _connect_player(self):
+        try:
+            from lollypop.define import App
+
+            self._player = App().player
+            self._signal_ids.append(
+                self._player.connect("current-changed", self._on_current_changed)
+            )
+        except Exception:
+            _log("Player connection failed:")
+            traceback.print_exc()
+
+    def _current_track(self):
+        try:
+            if self._player is None:
+                self._connect_player()
+            return getattr(self._player, "current_track", None)
+        except Exception:
+            return None
+
+    def _on_current_changed(self, *_args):
+        if self._active and not self._destroyed:
+            self._sync()
+
+    # ------------------------------------------------------------ state
+
+    def set_active(self, active):
+        """Called by the revealer: load content only while visible."""
+        self._active = bool(active)
+        if self._active:
+            self._sync(force=True)
+
+    def _apply_palette(self, palette):
+        if self._styler is not None:
+            self._styler.apply(palette)
+
+    def _sync(self, force=False):
+        if self._destroyed:
+            return
+
+        info = _track_info(self._current_track())
+        key = (info.has_track, info.title, info.artist, info.album, info.audio_path)
+        if not force and key == self._last_key:
+            return
+        self._last_key = key
+
+        self._token += 1
+        token = self._token
+        self.info.update(info.title, info.artist, info.album)
+
+        if not info.has_track:
+            self.artwork.set_artwork(None)
+            self._apply_palette(None)
+            self.lyrics.set_message("")
+            return
+
+        self.lyrics.set_message("Loading lyrics\u2026")
+        try:
+            self._executor.submit(self._load_assets, token, info)
+        except RuntimeError:
+            pass  # executor already shut down
+
+    def _stale(self, token):
+        return self._destroyed or token != self._token
+
+    # ------------------------------------------------------------ worker
+
+    def _load_assets(self, token, info):
+        """Worker thread. Never touches GTK except through GLib.idle_add."""
+        try:
+            # 1. Local artwork: embedded tag art first, then cover.jpg & co.
+            source, art = "embedded", _embedded_art(info.audio_path)
+            if not art:
+                source, art = "folder", _folder_cover(info.audio_path)
+            if art and not self._stale(token):
+                self._push_artwork(token, art, source)
+
+            # 2. Local lyrics: file tags, then cache.
+            lyrics = _tag_lyrics(info.audio_path) or _cached_lyrics(info)
+            if lyrics and not self._stale(token):
+                GLib.idle_add(self._apply_lyrics, token, lyrics)
+
+            # 3. Network fallbacks (slow, rate-limited): skip if user moved on.
+            if not art and not self._stale(token):
+                art = _online_artwork(info)
+                if not self._stale(token):
+                    if art:
+                        self._push_artwork(token, art, "online")
+                    else:
+                        _log(f"No artwork for '{info.artist} - {info.title}' "
+                             f"(audio_path={info.audio_path})")
+                        GLib.idle_add(self._apply_artwork, token, None, None)
+
+            if not lyrics and not self._stale(token):
+                lyrics = _online_lyrics(info)
+                if not self._stale(token):
+                    GLib.idle_add(self._apply_lyrics, token, lyrics)
+        except Exception:
+            _log("Asset loading failed:")
+            traceback.print_exc()
+
+    def _push_artwork(self, token, path, source):
+        palette = extract_palette(path) if extract_palette else None
+        _log(f"artwork ({source}): {path}"
+             f"{'' if palette else ' [no palette]'}")
+        GLib.idle_add(self._apply_artwork, token, path, palette)
+
+    # ------------------------------------------------------------ main thread
+
+    def _apply_artwork(self, token, path, palette):
+        if self._stale(token):
+            return False
+        shown = self.artwork.set_artwork(path)
+        self._apply_palette(palette if shown else None)
+        return False
+
+    def _apply_lyrics(self, token, text):
+        if not self._stale(token):
+            self.lyrics.set_lyrics(text)
+        return False
+
+    def _on_destroy(self, *_args):
+        self._destroyed = True
+        self._executor.shutdown(wait=False, cancel_futures=True)
+        if self._player is not None:
+            for ident in self._signal_ids:
+                try:
+                    self._player.disconnect(ident)
+                except Exception:
+                    pass
+        self._signal_ids.clear()
+        if self._styler is not None:
+            self._styler.remove()
+
+
+# ---------------------------------------------------------------- install
+
+def _toggle_icon():
+    theme = Gtk.IconTheme.get_default()
+    for name in ("sidebar-show-right-symbolic", "view-dual-symbolic",
+                 "audio-x-generic-symbolic"):
+        if theme is not None and theme.has_icon(name):
+            return name
+    return "audio-x-generic-symbolic"
+
+
+def _place_toggle(toolbar, toggle):
+    """Put the toggle inside Lollypop's end-of-header-bar button box
+    (next to menu/devices/home); fall back to the header bar itself."""
+    try:
+        end = getattr(toolbar, "end", None)
+        inner = end.get_child() if end is not None else None
+        if isinstance(inner, Gtk.Box):
+            inner.pack_end(toggle, False, False, 0)
+            return True
+        if toolbar is not None and hasattr(toolbar, "pack_end"):
+            toolbar.pack_end(toggle)
+            return True
+    except Exception:
+        _log("Could not place toggle button:")
+        traceback.print_exc()
+    return False
+
+
+def install_right_panel(vgrid, container, toolbar=None):
+    """Called from the patched Window.setup(), before the grid is added.
+
+    vgrid:     Window's vertical Gtk.Grid (toolbar + container)
+    container: Lollypop's main Container
+    toolbar:   Lollypop's Toolbar (Handy.HeaderBar) for the toggle button
+
+    Builds everything first; only then re-parents the container, and rolls
+    back if that fails, so a bug here cannot leave Lollypop without a UI.
+    """
+    panel = RightPanel()
+
+    revealer = Gtk.Revealer()
+    revealer.set_transition_type(Gtk.RevealerTransitionType.SLIDE_LEFT)
+    revealer.set_transition_duration(250)
+    revealer.set_vexpand(True)
+    revealer.add(panel)
+    panel.show()
+
+    toggle = Gtk.ToggleButton()
+    toggle.add(Gtk.Image.new_from_icon_name(_toggle_icon(), Gtk.IconSize.BUTTON))
+    toggle.get_child().show()
+    toggle.set_tooltip_text("Now playing panel")
+    toggle.get_style_context().add_class("image-button")
+
+    def on_toggled(button):
+        revealer.set_reveal_child(button.get_active())
+
+    def on_reveal_changed(rev, _pspec):
+        active = rev.get_reveal_child()
+        if toggle.get_active() != active:
+            toggle.set_active(active)
+        panel.set_active(active)
+
+    toggle.connect("toggled", on_toggled)
+    revealer.connect("notify::reveal-child", on_reveal_changed)
+    panel.close_button.connect(
+        "clicked", lambda *_: revealer.set_reveal_child(False)
+    )
+
+    # Miniplayer mode hides the container; hide the panel with it.
+    container.connect(
+        "notify::visible",
+        lambda c, _p: revealer.set_visible(c.get_visible()),
+    )
+
+    box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+    box.set_hexpand(True)
+    box.set_vexpand(True)
+
+    placed = _place_toggle(toolbar, toggle)
+    if placed:
+        toggle.show()
+
+    try:
+        vgrid.remove(container)
+        box.pack_start(container, True, True, 0)
+        box.pack_end(revealer, False, False, 0)
+        vgrid.add(box)
+        box.show()
+        revealer.show()
+    except Exception:
+        # Roll back to stock layout, then report the original error.
+        try:
+            if container.get_parent() is box:
+                box.remove(container)
+            if container.get_parent() is None:
+                vgrid.add(container)
+        except Exception:
+            _log("Rollback failed:")
+            traceback.print_exc()
+        raise
+
+    if not placed:
+        _log("No toggle button could be placed; opening the panel by default.")
+        revealer.set_reveal_child(True)
+
+    return panel

@@ -24,6 +24,9 @@ export type PayloadMap = {
     tracks: Track[]
     albumId: number
   }
+  ALL_TRACKS_LOADED: {
+    tracks: Track[]
+  }
   SEARCH_RESULTS: {
     query: string
     albums: Album[]
@@ -50,6 +53,7 @@ export type MessageOf<T extends keyof PayloadMap> = {
 
 export type Outbound =
   | { type: 'GET_LIBRARY'; payload?: { offset?: number; limit?: number } }
+  | { type: 'GET_TRACKS' }
   | { type: 'NAVIGATE'; payload: { view: string; id?: number; query?: string } }
   | { type: 'PLAY'; payload: { trackId: number; queue?: number[] } }
   | { type: 'PAUSE' }

@@ -1,0 +1,596 @@
+#!/usr/bin/env python3
+"""
+Lollypop Extension Patcher
+--------------------------
+Adds the custom RightPanel beside Lollypop's original main grid.
+
+Includes:
+- Explicit extension path
+- No HeroBanner
+- Playback signal connections plus polling fallback
+- Artwork resolution
+- Verified timestamped backup
+- Python syntax validation
+- Atomic file replacement
+- Safe replacement of marked patches
+"""
+
+import ast
+import os
+import re
+import sys
+import shutil
+import tempfile
+from datetime import datetime
+
+
+# ------------------------------------------------------------
+# CONFIGURATION
+# ------------------------------------------------------------
+
+TARGET = (
+    "/usr/lib/python3.14/site-packages/"
+    "lollypop/window.py"
+)
+
+EXTENSION_DIR = (
+    "/home/mahesh/Projects/lollypop-extension/ui"
+)
+
+IMPORT_START = "# LOLLYPOP EXTENSION PATCH START"
+IMPORT_END = "# LOLLYPOP EXTENSION PATCH END"
+
+LAYOUT_START = (
+    "# LOLLYPOP EXTENSION 3-PANE INJECTION START"
+)
+LAYOUT_END = (
+    "# LOLLYPOP EXTENSION 3-PANE INJECTION END"
+)
+
+
+# ------------------------------------------------------------
+# IMPORT PATCH
+# ------------------------------------------------------------
+
+IMPORT_PATCH = r'''
+# LOLLYPOP EXTENSION PATCH START
+import sys as _lollypop_ext_sys
+
+_lollypop_ext_dir = (
+    "/home/mahesh/Projects/lollypop-extension/ui"
+)
+
+if _lollypop_ext_dir not in _lollypop_ext_sys.path:
+    _lollypop_ext_sys.path.insert(0, _lollypop_ext_dir)
+
+try:
+    from widget_injector import (
+        RightPanel as _ExtensionRightPanel,
+        resolve_artwork_path as _extension_resolve_artwork,
+    )
+except Exception as _extension_import_error:
+    print(
+        "Lollypop extension: import failed:",
+        _extension_import_error
+    )
+    _ExtensionRightPanel = None
+    _extension_resolve_artwork = None
+# LOLLYPOP EXTENSION PATCH END
+'''
+
+
+# ------------------------------------------------------------
+# LAYOUT AND PLAYBACK PATCH
+# ------------------------------------------------------------
+
+LAYOUT_PATCH = r'''
+        # LOLLYPOP EXTENSION 3-PANE INJECTION START
+        def _extension_inject_3_pane():
+            try:
+                if getattr(
+                    self, "_extension_layout_installed", False
+                ):
+                    return False
+
+                if _ExtensionRightPanel is None:
+                    print(
+                        "Lollypop extension: RightPanel unavailable; "
+                        "injection skipped."
+                    )
+                    return False
+
+                _extension_main = getattr(
+                    self, "_Window__vgrid", None
+                )
+
+                if _extension_main is None:
+                    _extension_main = getattr(
+                        self, "__vgrid", None
+                    )
+
+                if _extension_main is None:
+                    print(
+                        "Lollypop extension: Could not locate "
+                        "the original main grid."
+                    )
+                    return False
+
+                _extension_parent = _extension_main.get_parent()
+
+                if _extension_parent is None:
+                    print(
+                        "Lollypop extension: Main grid has no parent."
+                    )
+                    return False
+
+                # Build the panel before changing the existing layout.
+                _extension_right_panel = _ExtensionRightPanel()
+                _extension_right_panel.set_name("right-panel")
+                _extension_right_panel.set_vexpand(True)
+
+                _extension_paned = Gtk.Paned(
+                    orientation=Gtk.Orientation.HORIZONTAL
+                )
+                _extension_paned.set_name(
+                    "lollypop-extension-paned"
+                )
+                _extension_paned.set_hexpand(True)
+                _extension_paned.set_vexpand(True)
+
+                # Preserve the original grid and its child widgets.
+                _extension_parent.remove(_extension_main)
+
+                _extension_paned.pack1(
+                    _extension_main,
+                    True,
+                    False
+                )
+                _extension_paned.pack2(
+                    _extension_right_panel,
+                    False,
+                    False
+                )
+                _extension_parent.add(_extension_paned)
+
+                self._extension_layout_installed = True
+                self._extension_paned = _extension_paned
+                self._extension_main_grid = _extension_main
+                self._extension_right_panel = _extension_right_panel
+
+                # --------------------------------------------
+                # Playback synchronization
+                # --------------------------------------------
+
+                _extension_last_track_key = [None]
+                _extension_last_playing = [None]
+                _extension_sync_error_reported = [False]
+
+                def _extension_sync_ui(*args):
+                    try:
+                        from lollypop.define import App
+
+                        _extension_player = getattr(
+                            App(), "player", None
+                        )
+
+                        if _extension_player is None:
+                            return
+
+                        _extension_track = getattr(
+                            _extension_player,
+                            "current_track",
+                            None
+                        )
+
+                        if callable(_extension_track):
+                            _extension_track = _extension_track()
+
+                        if _extension_track is None:
+                            _extension_last_track_key[0] = None
+
+                            _extension_right_panel.set_track(
+                                "Not Playing",
+                                "Choose a track",
+                                "",
+                                artwork_path=None
+                            )
+                        else:
+                            _extension_title = (
+                                getattr(
+                                    _extension_track,
+                                    "name",
+                                    None
+                                )
+                                or "Unknown Track"
+                            )
+
+                            _extension_artists = (
+                                getattr(
+                                    _extension_track,
+                                    "artists",
+                                    []
+                                )
+                                or []
+                            )
+
+                            if isinstance(
+                                _extension_artists, str
+                            ):
+                                _extension_artist_text = (
+                                    _extension_artists
+                                )
+                            else:
+                                _extension_artist_text = ", ".join(
+                                    str(
+                                        getattr(
+                                            artist,
+                                            "name",
+                                            artist
+                                        )
+                                    )
+                                    for artist in _extension_artists
+                                )
+
+                            _extension_album = getattr(
+                                _extension_track,
+                                "album",
+                                None
+                            )
+
+                            if isinstance(_extension_album, str):
+                                _extension_album_text = (
+                                    _extension_album
+                                )
+                            elif _extension_album is not None:
+                                _extension_album_text = (
+                                    getattr(
+                                        _extension_album,
+                                        "name",
+                                        None
+                                    )
+                                    or getattr(
+                                        _extension_album,
+                                        "title",
+                                        ""
+                                    )
+                                    or ""
+                                )
+                            else:
+                                _extension_album_text = ""
+
+                            # Distinguish tracks even if titles repeat.
+                            _extension_track_key = (
+                                getattr(
+                                    _extension_track, "id", None
+                                ),
+                                getattr(
+                                    _extension_track, "uri", None
+                                ),
+                                _extension_title,
+                                _extension_artist_text,
+                                _extension_album_text,
+                            )
+
+                            if (
+                                _extension_track_key
+                                != _extension_last_track_key[0]
+                            ):
+                                _extension_artwork_path = None
+
+                                if _extension_resolve_artwork:
+                                    try:
+                                        _extension_artwork_path = (
+                                            _extension_resolve_artwork(
+                                                _extension_track
+                                            )
+                                        )
+                                    except Exception as _art_error:
+                                        print(
+                                            "Lollypop extension: "
+                                            "artwork resolution failed:",
+                                            _art_error
+                                        )
+
+                                _extension_right_panel.set_track(
+                                    _extension_title,
+                                    _extension_artist_text,
+                                    _extension_album_text,
+                                    artwork_path=_extension_artwork_path
+                                )
+
+                                _extension_last_track_key[0] = (
+                                    _extension_track_key
+                                )
+
+                        # is_playing may be a property or method.
+                        _extension_playing = getattr(
+                            _extension_player,
+                            "is_playing",
+                            False
+                        )
+
+                        if callable(_extension_playing):
+                            _extension_playing = (
+                                _extension_playing()
+                            )
+
+                        _extension_playing = bool(
+                            _extension_playing
+                        )
+
+                        if (
+                            _extension_playing
+                            != _extension_last_playing[0]
+                        ):
+                            _extension_right_panel.set_playing(
+                                _extension_playing
+                            )
+                            _extension_last_playing[0] = (
+                                _extension_playing
+                            )
+
+                    except Exception as _extension_sync_error:
+                        if not _extension_sync_error_reported[0]:
+                            print(
+                                "Lollypop extension: playback "
+                                "synchronization failed:",
+                                _extension_sync_error
+                            )
+                            _extension_sync_error_reported[0] = True
+
+                # Connect supported player signals.
+                from lollypop.define import App
+
+                _extension_player = getattr(
+                    App(), "player", None
+                )
+                _extension_connected_signals = []
+
+                if _extension_player is not None:
+                    for _extension_signal in (
+                        "current-changed",
+                        "status-changed"
+                    ):
+                        try:
+                            _extension_player.connect(
+                                _extension_signal,
+                                _extension_sync_ui
+                            )
+                            _extension_connected_signals.append(
+                                _extension_signal
+                            )
+                        except Exception:
+                            # Polling below remains the fallback.
+                            pass
+
+                from gi.repository import GLib as _ExtensionGLib
+
+                _extension_sync_ui()
+
+                self._extension_sync_source = (
+                    _ExtensionGLib.timeout_add_seconds(
+                        1,
+                        lambda: (
+                            _extension_sync_ui() or True
+                        )
+                    )
+                )
+
+                _extension_paned.show_all()
+
+                print(
+                    "Lollypop extension: RightPanel injected."
+                )
+                print(
+                    "Lollypop extension: playback signals:",
+                    _extension_connected_signals
+                    or "polling fallback"
+                )
+
+            except Exception as _extension_error:
+                print(
+                    "Lollypop extension: injection failed:",
+                    _extension_error
+                )
+
+            return False
+
+        from gi.repository import GLib as _ExtensionGLib
+        _ExtensionGLib.idle_add(_extension_inject_3_pane)
+        # LOLLYPOP EXTENSION 3-PANE INJECTION END
+'''
+
+
+# ------------------------------------------------------------
+# PATCH UTILITIES
+# ------------------------------------------------------------
+
+def remove_existing_patch(source, start, end):
+    """Remove a previous marked patch block."""
+    pattern = (
+        re.escape(start)
+        + r".*?"
+        + re.escape(end)
+        + r"[ \t]*(?:\r?\n)?"
+    )
+    return re.sub(pattern, "", source, flags=re.DOTALL)
+
+
+def insert_import_patch(source):
+    """Insert the extension import block after Lollypop's GTK import."""
+    match = re.search(
+        r"^from gi\.repository import Gtk[^\n]*$",
+        source,
+        flags=re.MULTILINE
+    )
+
+    if match is None:
+        raise RuntimeError(
+            "Could not find Lollypop's GTK import."
+        )
+
+    return (
+        source[:match.end()]
+        + "\n"
+        + IMPORT_PATCH.strip()
+        + "\n"
+        + source[match.end():]
+    )
+
+
+def insert_layout_patch(source):
+    """Insert the injection after self.add(self.__vgrid)."""
+    anchor = re.search(
+        r"^(?P<indent>[ \t]*)self\.add\(self\.__vgrid\)"
+        r"[ \t]*$",
+        source,
+        flags=re.MULTILINE
+    )
+
+    if anchor is None:
+        raise RuntimeError(
+            "Could not find self.add(self.__vgrid). "
+            "No changes have been made."
+        )
+
+    indent = anchor.group("indent")
+    lines = LAYOUT_PATCH.strip("\n").splitlines()
+    adjusted = []
+
+    for line in lines:
+        if line.startswith("        "):
+            adjusted.append(indent + line[8:])
+        elif line:
+            adjusted.append(indent + line)
+        else:
+            adjusted.append("")
+
+    patch = "\n".join(adjusted)
+
+    return (
+        source[:anchor.end()]
+        + "\n"
+        + patch
+        + "\n"
+        + source[anchor.end():]
+    )
+
+
+def atomic_replace(target, source):
+    """Replace the target atomically and preserve its metadata."""
+    target_dir = os.path.dirname(target)
+    original_stat = os.stat(target)
+    temp_path = None
+
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=target_dir,
+            prefix=".lollypop-extension-",
+            suffix=".tmp",
+            delete=False
+        ) as temp_file:
+            temp_path = temp_file.name
+            temp_file.write(source)
+            temp_file.flush()
+            os.fsync(temp_file.fileno())
+
+        shutil.copystat(target, temp_path)
+        os.chown(
+            temp_path,
+            original_stat.st_uid,
+            original_stat.st_gid
+        )
+        os.replace(temp_path, target)
+        temp_path = None
+
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            os.unlink(temp_path)
+
+
+# ------------------------------------------------------------
+# MAIN
+# ------------------------------------------------------------
+
+def main():
+    if os.geteuid() != 0:
+        sys.exit(
+            "Run with:\n"
+            "sudo python3 "
+            "/home/mahesh/Projects/lollypop-extension/ui/patcher.py"
+        )
+
+    if not os.path.isfile(TARGET):
+        sys.exit("Lollypop window.py was not found:\n" + TARGET)
+
+    widget_path = os.path.join(
+        EXTENSION_DIR, "widget_injector.py"
+    )
+    if not os.path.isfile(widget_path):
+        sys.exit(
+            "widget_injector.py was not found:\n" + widget_path
+        )
+
+    with open(TARGET, "r", encoding="utf-8") as file:
+        original_source = file.read()
+
+    source = remove_existing_patch(
+        original_source, IMPORT_START, IMPORT_END
+    )
+    source = remove_existing_patch(
+        source, LAYOUT_START, LAYOUT_END
+    )
+
+    try:
+        source = insert_import_patch(source)
+        source = insert_layout_patch(source)
+
+        ast.parse(source, filename=TARGET)
+        compile(source, TARGET, "exec")
+
+    except (RuntimeError, SyntaxError) as error:
+        sys.exit(
+            "Patch validation failed. No changes made:\n"
+            + str(error)
+        )
+
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    backup = f"{TARGET}.before-extension-{timestamp}"
+
+    try:
+        shutil.copy2(TARGET, backup)
+
+        with open(backup, "r", encoding="utf-8") as file:
+            backup_source = file.read()
+
+        if backup_source != original_source:
+            os.remove(backup)
+            sys.exit(
+                "Backup verification failed. "
+                "The installed file was not changed."
+            )
+
+        atomic_replace(TARGET, source)
+
+    except Exception as error:
+        if os.path.exists(backup):
+            print("Backup preserved at:", backup)
+
+        sys.exit("Could not install patch:\n" + str(error))
+
+    print()
+    print("Lollypop extension patch installed.")
+    print("Target:", TARGET)
+    print("Backup:", backup)
+    print("Python syntax validation: passed")
+    print("HeroBanner: disabled")
+    print("Artwork resolver: enabled")
+    print("Playback: signals + polling fallback")
+    print()
+    print("Restart Lollypop to load the updated window.py.")
+
+
+if __name__ == "__main__":
+    main()

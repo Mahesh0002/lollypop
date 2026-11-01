@@ -1,0 +1,801 @@
+#!/usr/bin/env python3
+"""Lollypop custom Now Playing panel — GTK3."""
+
+import os
+import math
+import hashlib
+from urllib.parse import urlparse, unquote
+
+import gi
+
+gi.require_version("Gtk", "3.0")
+gi.require_version("Gdk", "3.0")
+
+from gi.repository import Gtk, Gdk, GLib, GdkPixbuf, GObject
+import cairo
+
+
+BAR_COUNT = 32
+FRAME_INTERVAL = 33
+ACCENT_COLOR = "#A78BFA"
+PANEL_WIDTH = 340
+VISUALIZER_WIDTH_RATIO = 0.83
+VISUALIZER_HEIGHT = 86
+
+
+# ------------------------------------------------------------
+# ARTWORK RESOLUTION
+# ------------------------------------------------------------
+
+def _local_path(value):
+    """Convert a local path or file:// URI into a real path."""
+    if not isinstance(value, str) or not value:
+        return None
+
+    if value.startswith("file://"):
+        parsed = urlparse(value)
+        value = unquote(parsed.path)
+
+    if os.path.isfile(value):
+        return os.path.realpath(value)
+
+    return None
+
+
+def _object_artwork_path(obj):
+    """Find a local artwork path exposed by a Lollypop object."""
+    if obj is None:
+        return None
+
+    path_attributes = (
+        "artwork_path",
+        "cover_path",
+        "image_path",
+        "thumbnail_path",
+        "artwork",
+        "cover",
+        "image",
+        "thumbnail",
+        "path",
+        "filename",
+        "uri",
+    )
+
+    for name in path_attributes:
+        try:
+            value = getattr(obj, name, None)
+        except Exception:
+            continue
+
+        if callable(value):
+            continue
+
+        path = _local_path(value)
+        if path:
+            return path
+
+    # Only try known, no-argument artwork getter names.
+    for name in ("get_artwork", "get_cover", "get_thumbnail"):
+        try:
+            getter = getattr(obj, name, None)
+            if not callable(getter):
+                continue
+
+            value = getter()
+            path = _local_path(value)
+            if path:
+                return path
+        except Exception:
+            continue
+
+    return None
+
+
+def _track_file_path(track):
+    """Find the audio file backing a Lollypop track."""
+    if track is None:
+        return None
+
+    for name in ("uri", "url", "path", "filename", "file_path"):
+        try:
+            value = getattr(track, name, None)
+        except Exception:
+            continue
+
+        if callable(value):
+            continue
+
+        path = _local_path(value)
+        if path:
+            return path
+
+    return None
+
+
+def _extract_embedded_artwork(track):
+    """
+    Extract embedded artwork using mutagen when available.
+
+    The extracted image is cached so it is not rewritten on every poll.
+    """
+    audio_path = _track_file_path(track)
+    if not audio_path:
+        return None
+
+    try:
+        import mutagen
+        from mutagen.flac import Picture
+        import base64
+    except ImportError:
+        return None
+
+    try:
+        audio = mutagen.File(audio_path)
+        if audio is None:
+            return None
+
+        picture_data = None
+        picture_mime = "image/jpeg"
+
+        # FLAC and formats exposing a pictures collection.
+        pictures = getattr(audio, "pictures", None)
+        if pictures:
+            picture = pictures[0]
+            picture_data = getattr(picture, "data", None)
+            picture_mime = getattr(
+                picture, "mime", picture_mime
+            ) or picture_mime
+
+        tags = getattr(audio, "tags", None)
+
+        if not picture_data and tags:
+            # MP3 ID3 artwork.
+            try:
+                for frame in tags.values():
+                    if getattr(frame, "FrameID", None) == "APIC":
+                        picture_data = frame.data
+                        picture_mime = getattr(
+                            frame, "mime", picture_mime
+                        )
+                        break
+            except Exception:
+                pass
+
+        if not picture_data and tags:
+            # MP4/M4A artwork.
+            try:
+                cover = tags.get("covr")
+                if cover:
+                    picture_data = bytes(cover[0])
+                    picture_mime = "image/jpeg"
+            except Exception:
+                pass
+
+        if not picture_data and tags:
+            # Ogg Vorbis / Opus FLAC-picture metadata.
+            try:
+                encoded = tags.get("metadata_block_picture")
+                if encoded:
+                    raw_picture = base64.b64decode(encoded[0])
+                    picture = Picture(raw_picture)
+                    picture_data = picture.data
+                    picture_mime = picture.mime or picture_mime
+            except Exception:
+                pass
+
+        if not picture_data:
+            return None
+
+        extension = (
+            ".png" if "png" in picture_mime.lower()
+            else ".jpg"
+        )
+
+        stat = os.stat(audio_path)
+        cache_key = (
+            f"{audio_path}:{stat.st_size}:{stat.st_mtime_ns}"
+        )
+        digest = hashlib.sha256(
+            cache_key.encode("utf-8")
+        ).hexdigest()
+
+        cache_dir = os.path.expanduser(
+            "~/.cache/lollypop-extension/artwork"
+        )
+        os.makedirs(cache_dir, exist_ok=True)
+
+        artwork_path = os.path.join(
+            cache_dir, digest + extension
+        )
+
+        if not os.path.isfile(artwork_path):
+            temporary_path = artwork_path + ".tmp"
+            with open(temporary_path, "wb") as image_file:
+                image_file.write(picture_data)
+            os.replace(temporary_path, artwork_path)
+
+        return artwork_path
+
+    except Exception:
+        return None
+
+
+def resolve_artwork_path(track):
+    """
+    Resolve artwork without assuming a single Lollypop internals API.
+
+    Tries track metadata, album metadata, then embedded local cover art.
+    """
+    if track is None:
+        return None
+
+    album = getattr(track, "album", None)
+
+    for obj in (track, album):
+        path = _object_artwork_path(obj)
+        if path:
+            return path
+
+    return _extract_embedded_artwork(track)
+
+
+# ------------------------------------------------------------
+# VISUALIZER
+# ------------------------------------------------------------
+
+class SimpleVisualizer(Gtk.DrawingArea):
+    """
+    Smooth 32-bar visualizer.
+
+    set_levels() accepts real normalized levels from an audio source.
+    Until such a source is connected, the display uses a deterministic
+    animated waveform rather than random values.
+    """
+
+    def __init__(self):
+        super().__init__()
+
+        self.set_name("simple-visualizer")
+        self.set_size_request(-1, VISUALIZER_HEIGHT)
+        self.set_hexpand(True)
+
+        self.levels = [0.08] * BAR_COUNT
+        self.targets = [0.08] * BAR_COUNT
+        self.phase = 0.0
+        self.playing = False
+        self.has_external_levels = False
+
+        self.accent = Gdk.RGBA()
+        self.accent.parse(ACCENT_COLOR)
+
+        self.connect("draw", self.on_draw)
+        GLib.timeout_add(FRAME_INTERVAL, self._animate)
+
+    def set_playing(self, playing):
+        self.playing = bool(playing)
+        self.queue_draw()
+
+    def set_levels(self, levels):
+        """Accept normalized audio levels in the range 0.0–1.0."""
+        if not levels:
+            return
+
+        try:
+            values = [
+                max(0.0, min(1.0, float(value)))
+                for value in levels
+            ]
+        except (TypeError, ValueError):
+            return
+
+        if not values:
+            return
+
+        self.has_external_levels = True
+
+        for i in range(BAR_COUNT):
+            position = (
+                i * (len(values) - 1)
+                / max(1, BAR_COUNT - 1)
+            )
+            left = int(position)
+            right = min(left + 1, len(values) - 1)
+            fraction = position - left
+
+            self.targets[i] = (
+                values[left] * (1.0 - fraction)
+                + values[right] * fraction
+            )
+
+    def _animate(self):
+        if not self.get_realized():
+            return GLib.SOURCE_CONTINUE
+
+        if self.playing:
+            self.phase += 0.10
+
+            if not self.has_external_levels:
+                for i in range(BAR_COUNT):
+                    # Repeatable wave motion — no random spikes.
+                    wave_a = abs(
+                        math.sin(i * 0.34 + self.phase)
+                    )
+                    wave_b = abs(
+                        math.sin(i * 0.16 - self.phase * 0.65)
+                    )
+                    envelope = 0.10 + 0.50 * (
+                        0.65 * wave_a + 0.35 * wave_b
+                    )
+                    self.targets[i] = min(0.82, envelope)
+
+            for i in range(BAR_COUNT):
+                self.levels[i] += (
+                    self.targets[i] - self.levels[i]
+                ) * 0.20
+
+        else:
+            # Settle smoothly to a quiet resting state.
+            for i in range(BAR_COUNT):
+                self.targets[i] = 0.035
+                self.levels[i] += (
+                    self.targets[i] - self.levels[i]
+                ) * 0.16
+
+        self.queue_draw()
+        return GLib.SOURCE_CONTINUE
+
+    def on_draw(self, widget, cr):
+        width = widget.get_allocated_width()
+        height = widget.get_allocated_height()
+
+        if width <= 0 or height <= 0:
+            return False
+
+        cr.set_source_rgba(0.55, 0.55, 0.65, 0.12)
+        cr.set_line_width(1)
+        cr.move_to(0, height - 3)
+        cr.line_to(width, height - 3)
+        cr.stroke()
+
+        padding = 4.0
+        usable_width = max(1.0, width - 2 * padding)
+        spacing = usable_width / BAR_COUNT
+        bar_width = max(2.0, min(5.0, spacing * 0.52))
+        max_height = height * 0.78
+        center_y = height * 0.51
+
+        cr.set_line_cap(cairo.LINE_CAP_ROUND)
+        cr.set_line_width(bar_width)
+
+        for i, level in enumerate(self.levels):
+            x = padding + spacing * (i + 0.5)
+            half_height = max(
+                bar_width / 2,
+                level * max_height / 2
+            )
+
+            edge_distance = abs(
+                (i - (BAR_COUNT - 1) / 2)
+                / max(1, (BAR_COUNT - 1) / 2)
+            )
+            alpha = 0.95 - edge_distance * 0.30
+
+            cr.set_source_rgba(
+                self.accent.red,
+                self.accent.green,
+                self.accent.blue,
+                alpha
+            )
+            cr.move_to(x, center_y - half_height)
+            cr.line_to(x, center_y + half_height)
+            cr.stroke()
+
+        return False
+
+
+# ------------------------------------------------------------
+# ALBUM ARTWORK WIDGET
+# ------------------------------------------------------------
+
+class AlbumArtwork(Gtk.EventBox):
+    def __init__(self):
+        super().__init__()
+
+        self.set_name("album-artwork")
+        self.set_visible_window(False)
+
+        self.image = Gtk.Image()
+        self.image.set_name("album-artwork-image")
+        self._pixbuf = None
+        self._path = None
+        self._size = 260
+
+        self._show_fallback()
+        self.add(self.image)
+        self.set_size_request(260, 260)
+
+    def _show_fallback(self):
+        self.image.set_from_icon_name(
+            "audio-x-generic",
+            Gtk.IconSize.DIALOG
+        )
+
+    def set_artwork(self, path, size=260):
+        """Load artwork only when its path or requested size changes."""
+        path = _local_path(path)
+
+        if path == self._path and size == self._size:
+            return bool(self._pixbuf)
+
+        self._path = path
+        self._size = size
+        self._pixbuf = None
+
+        if not path:
+            self._show_fallback()
+            return False
+
+        try:
+            pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(
+                path, size, size, True
+            )
+            self._pixbuf = pixbuf
+            self.image.set_from_pixbuf(pixbuf)
+            return True
+        except (GLib.Error, OSError):
+            self._show_fallback()
+            return False
+
+
+# ------------------------------------------------------------
+# TRACK INFORMATION
+# ------------------------------------------------------------
+
+class TrackInformation(Gtk.Box):
+    __gsignals__ = {
+        "favorite-changed": (
+            GObject.SignalFlags.RUN_FIRST,
+            None,
+            (bool,)
+        )
+    }
+
+    def __init__(self):
+        super().__init__(
+            orientation=Gtk.Orientation.HORIZONTAL,
+            spacing=12
+        )
+        self.set_name("track-information")
+
+        details = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL,
+            spacing=5
+        )
+        details.set_hexpand(True)
+        details.set_valign(Gtk.Align.CENTER)
+
+        self.title_label = Gtk.Label(label="Not Playing")
+        self.title_label.set_name("track-title")
+        self.title_label.set_halign(Gtk.Align.START)
+        self.title_label.set_ellipsize(3)
+        self.title_label.set_max_width_chars(28)
+        self.title_label.set_single_line_mode(True)
+
+        self.artist_label = Gtk.Label(label="Choose a track")
+        self.artist_label.set_name("track-artist")
+        self.artist_label.set_halign(Gtk.Align.START)
+        self.artist_label.set_ellipsize(3)
+        self.artist_label.set_max_width_chars(32)
+
+        self.album_label = Gtk.Label(label="")
+        self.album_label.set_name("track-album")
+        self.album_label.set_halign(Gtk.Align.START)
+        self.album_label.set_ellipsize(3)
+        self.album_label.set_max_width_chars(32)
+
+        details.pack_start(self.title_label, False, False, 0)
+        details.pack_start(self.artist_label, False, False, 0)
+        details.pack_start(self.album_label, False, False, 0)
+
+        self.favorite_button = Gtk.Button()
+        self.favorite_button.set_name("favorite-button")
+        self.favorite_button.set_relief(Gtk.ReliefStyle.NONE)
+        self.favorite_button.set_tooltip_text("Add to favorites")
+        self.favorite_button.set_image(
+            Gtk.Image.new_from_icon_name(
+                "emblem-favorite",
+                Gtk.IconSize.BUTTON
+            )
+        )
+        self.is_favorite = False
+        self.favorite_button.connect(
+            "clicked", self._toggle_favorite
+        )
+
+        self.pack_start(details, True, True, 0)
+        self.pack_end(self.favorite_button, False, False, 0)
+
+    def _toggle_favorite(self, _button):
+        self.is_favorite = not self.is_favorite
+        self.favorite_button.set_tooltip_text(
+            "Remove from favorites"
+            if self.is_favorite
+            else "Add to favorites"
+        )
+        self.emit("favorite-changed", self.is_favorite)
+
+    def set_track(self, title, artist, album=""):
+        self.title_label.set_text(title or "Unknown Track")
+        self.artist_label.set_text(artist or "Unknown Artist")
+        self.album_label.set_text(album or "")
+
+
+# ------------------------------------------------------------
+# PANEL HEADER
+# ------------------------------------------------------------
+
+class PanelHeader(Gtk.Box):
+    def __init__(self):
+        super().__init__(
+            orientation=Gtk.Orientation.HORIZONTAL,
+            spacing=8
+        )
+        self.set_name("right-panel-header")
+
+        title = Gtk.Label(label="Now Playing")
+        title.set_name("panel-heading")
+        title.set_halign(Gtk.Align.START)
+
+        self.menu_button = Gtk.Button()
+        self.menu_button.set_relief(Gtk.ReliefStyle.NONE)
+        self.menu_button.set_tooltip_text("More options")
+        self.menu_button.set_image(
+            Gtk.Image.new_from_icon_name(
+                "view-more-symbolic",
+                Gtk.IconSize.BUTTON
+            )
+        )
+
+        self.pack_start(title, True, True, 0)
+        self.pack_end(self.menu_button, False, False, 0)
+
+
+# ------------------------------------------------------------
+# QUEUE
+# ------------------------------------------------------------
+
+class QueueSection(Gtk.Box):
+    """Use Lollypop's native queue view and its queue-change signals."""
+
+    def __init__(self):
+        super().__init__(
+            orientation=Gtk.Orientation.VERTICAL,
+            spacing=10
+        )
+        self.set_name("queue-section")
+
+        header = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL,
+            spacing=8
+        )
+        title = Gtk.Label(label="Up Next")
+        title.set_name("queue-heading")
+        title.set_halign(Gtk.Align.START)
+        header.pack_start(title, True, True, 0)
+        self.pack_start(header, False, False, 0)
+
+        self.scroll = Gtk.ScrolledWindow()
+        self.scroll.set_name("queue-scroll")
+        self.scroll.set_policy(
+            Gtk.PolicyType.NEVER,
+            Gtk.PolicyType.AUTOMATIC
+        )
+        self.scroll.set_shadow_type(Gtk.ShadowType.NONE)
+        self.scroll.set_vexpand(True)
+        self.scroll.set_hexpand(True)
+
+        self.queue_view = None
+        self._load_native_queue()
+        self.pack_start(self.scroll, True, True, 0)
+
+    def _load_native_queue(self):
+        try:
+            from lollypop.view_tracks_queue import QueueTracksView
+
+            self.queue_view = QueueTracksView()
+            self.scroll.add(self.queue_view)
+            GLib.idle_add(self._populate_queue)
+        except (ImportError, AttributeError, TypeError) as error:
+            print("Lollypop extension: native queue unavailable:", error)
+            self._show_fallback()
+
+    def _populate_queue(self):
+        if self.queue_view is not None:
+            populate = getattr(self.queue_view, "populate", None)
+            if callable(populate):
+                try:
+                    populate()
+                except (RuntimeError, TypeError, AttributeError) as error:
+                    print("Lollypop extension: queue populate failed:", error)
+        return GLib.SOURCE_REMOVE
+
+    def _show_fallback(self):
+        placeholder = Gtk.Label(
+            label="The Lollypop queue is unavailable."
+        )
+        placeholder.set_name("queue-placeholder")
+        placeholder.set_justify(Gtk.Justification.CENTER)
+        placeholder.set_line_wrap(True)
+        placeholder.set_valign(Gtk.Align.START)
+        placeholder.set_margin_top(16)
+        self.scroll.add(placeholder)
+
+
+# ------------------------------------------------------------
+# RIGHT PANEL
+# ------------------------------------------------------------
+
+class RightPanel(Gtk.Box):
+    def __init__(self):
+        super().__init__(
+            orientation=Gtk.Orientation.VERTICAL,
+            spacing=18
+        )
+        self.set_name("right-panel")
+        self.set_size_request(PANEL_WIDTH, -1)
+        self.set_margin_start(18)
+        self.set_margin_end(18)
+        self.set_margin_top(20)
+        self.set_margin_bottom(16)
+
+        self.header = PanelHeader()
+        self.pack_start(self.header, False, False, 0)
+
+        self.artwork = AlbumArtwork()
+        self.artwork.set_halign(Gtk.Align.CENTER)
+        self.artwork.set_valign(Gtk.Align.START)
+
+        artwork_container = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL
+        )
+        artwork_container.set_halign(Gtk.Align.CENTER)
+        artwork_container.pack_start(
+            self.artwork, False, False, 0
+        )
+        self.pack_start(artwork_container, False, False, 0)
+
+        self.track_info = TrackInformation()
+        self.pack_start(self.track_info, False, False, 0)
+
+        visualizer_header = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL,
+            spacing=8
+        )
+        visualizer_header.set_hexpand(True)
+
+        visualizer_title = Gtk.Label(label="VISUALIZER")
+        visualizer_title.set_name("section-eyebrow")
+        visualizer_title.set_halign(Gtk.Align.START)
+        visualizer_header.pack_start(
+            visualizer_title, True, True, 0
+        )
+        self.pack_start(visualizer_header, False, False, 0)
+
+        visualizer_container = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL,
+            spacing=0
+        )
+        visualizer_container.set_name("visualizer-container")
+        visualizer_container.set_hexpand(True)
+
+        self.visualizer = SimpleVisualizer()
+        self.visualizer.set_hexpand(True)
+        self.visualizer.set_size_request(-1, VISUALIZER_HEIGHT)
+
+        self.visualizer_inner = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL,
+            spacing=0
+        )
+        self.visualizer_inner.set_name("visualizer-inner")
+        self.visualizer_inner.set_halign(Gtk.Align.CENTER)
+        self.visualizer_inner.set_hexpand(False)
+        self.visualizer_inner.pack_start(
+            self.visualizer, True, True, 0
+        )
+
+        visualizer_container.pack_start(
+            self.visualizer_inner, False, False, 0
+        )
+        visualizer_container.connect(
+            "size-allocate", self._resize_visualizer
+        )
+        self.pack_start(visualizer_container, False, False, 0)
+
+        self.queue = QueueSection()
+        self.queue.set_vexpand(True)
+        self.pack_start(self.queue, True, True, 0)
+
+        self._current_artwork_path = None
+        self.show_all()
+
+    def _resize_visualizer(self, _container, allocation):
+        if allocation.width <= 0:
+            return
+
+        target_width = max(
+            1, int(allocation.width * VISUALIZER_WIDTH_RATIO)
+        )
+        self.visualizer_inner.set_size_request(target_width, -1)
+
+    def set_track(
+        self, title, artist, album="", artwork_path=None
+    ):
+        self.track_info.set_track(title, artist, album)
+
+        resolved_path = _local_path(artwork_path)
+        if resolved_path != self._current_artwork_path:
+            self._current_artwork_path = resolved_path
+            self.artwork.set_artwork(resolved_path)
+
+    def set_playing(self, playing):
+        self.visualizer.set_playing(playing)
+
+
+# ------------------------------------------------------------
+# OPTIONAL BASELINE CSS
+# ------------------------------------------------------------
+
+def install_panel_css():
+    css = b"""
+    #right-panel { padding: 0; }
+    #panel-heading { font-size: 16px; font-weight: 700; }
+    #album-artwork, #album-artwork-image { border-radius: 12px; }
+    #track-title { font-size: 17px; font-weight: 700; }
+    #track-artist { font-size: 13px; opacity: 0.80; }
+    #track-album { font-size: 11px; opacity: 0.60; }
+    #section-eyebrow {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 1px;
+        opacity: 0.65;
+    }
+    #queue-heading { font-size: 14px; font-weight: 700; }
+    #queue-placeholder { opacity: 0.65; }
+    #simple-visualizer { min-height: 86px; }
+    #favorite-button, #right-panel-header button {
+        background: transparent;
+        border: none;
+        box-shadow: none;
+    }
+    """
+
+    provider = Gtk.CssProvider()
+    provider.load_from_data(css)
+    screen = Gdk.Screen.get_default()
+
+    if screen:
+        Gtk.StyleContext.add_provider_for_screen(
+            screen,
+            provider,
+            Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+        )
+
+
+if __name__ == "__main__":
+    install_panel_css()
+
+    window = Gtk.Window(title="Lollypop — Now Playing Panel")
+    window.set_default_size(380, 800)
+    window.set_border_width(8)
+
+    panel = RightPanel()
+    panel.set_track(
+        "Giorgio by Moroder",
+        "Daft Punk",
+        "Random Access Memories"
+    )
+
+    window.add(panel)
+    window.connect("destroy", Gtk.main_quit)
+    window.show_all()
+    Gtk.main()

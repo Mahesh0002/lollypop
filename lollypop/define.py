@@ -199,6 +199,7 @@ class SelectionListMask:
     COMPILATIONS = 1 << 6
     LABEL = 1 << 7
     ELLIPSIZE = 1 << 8
+    TRACKS = 1 << 9
 
 
 class Notifications:
@@ -263,6 +264,7 @@ class Type:
     DEVICE_ALBUMS = -27
     DEVICE_PLAYLISTS = -28
     ALBUM = -29
+    TRACKS = -30
     ALL = -99
     SEPARATOR = -100
     CURRENT = -101

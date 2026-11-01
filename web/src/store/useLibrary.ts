@@ -7,7 +7,11 @@ export type ViewId =
   | 'albums'
   | 'artists'
   | 'playlists'
+  | 'tracks'
   | 'album-detail'
+  | 'artist-detail'
+  | 'playlist-detail'
+  | 'search'
 
 export type Playback = {
   playing: boolean
@@ -35,6 +39,14 @@ type LibraryState = {
   selectedAlbum: Album | null
   /** Tracks for the selected album */
   albumTracks: Track[]
+  /** All tracks for the Songs view */
+  allTracks: Track[]
+  /** Tracks for the selected artist */
+  artistTracks: Track[]
+  /** Albums for the selected artist */
+  artistAlbums: Album[]
+  /** Tracks for the selected playlist */
+  playlistTracks: Track[]
   playback: Playback
   /** Ask the host for the library (no-op when offline). */
   load: (offset?: number, limit?: number) => void
@@ -71,6 +83,10 @@ export const useLibrary = create<LibraryState>((set, get) => ({
   view: 'listen-now',
   selectedAlbum: null,
   albumTracks: [],
+  allTracks: [],
+  artistTracks: [],
+  artistAlbums: [],
+  playlistTracks: [],
   playback: idle,
 
   load: (offset = 0, limit = 100) => {
@@ -87,6 +103,14 @@ export const useLibrary = create<LibraryState>((set, get) => ({
     const { albums, total, offset, limit, loading } = get()
     if (loading || offset + albums.length >= total) return
     get().load(offset + limit, limit)
+  },
+
+  loadTracks: () => {
+    if (!bridge.connected) {
+      set({ allTracks: [] })
+      return
+    }
+    bridge.send({ type: 'GET_TRACKS' })
   },
 
   setQuery: (query) => set({ query }),
@@ -159,6 +183,10 @@ bridge.on('ALBUM_LOADED', (payload) => {
 
 bridge.on('TRACKS_LOADED', (payload) => {
   useLibrary.setState({ albumTracks: payload.tracks })
+})
+
+bridge.on('ALL_TRACKS_LOADED', (payload) => {
+  useLibrary.setState({ allTracks: payload.tracks, view: 'tracks' })
 })
 
 bridge.on('SEARCH_RESULTS', (payload) => {

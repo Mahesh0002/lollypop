@@ -1,6 +1,7 @@
 import { AlbumGrid } from './AlbumGrid'
 import { AlbumDetailPage } from './AlbumDetailPage'
 import { TrackList } from './TrackList'
+import { TracksView } from './TracksView'
 import { useLibrary } from '../store/useLibrary'
 import type { ViewId } from '../store/useLibrary'
 
@@ -9,17 +10,17 @@ const TITLES: Record<ViewId, string> = {
   albums: 'Albums',
   artists: 'Artists',
   playlists: 'Playlists',
+  tracks: 'Songs',
   'album-detail': 'Album',
   'artist-detail': 'Artist',
   'playlist-detail': 'Playlist',
-  tracks: 'Tracks',
   search: 'Search',
 }
 
 export function AppShell() {
   const {
     albums, total, truncated, loading, online, query, view, playback,
-    setQuery, setView, selectAlbum, playTrack, togglePlay, seek, load, loadMore, selectedAlbum, albumTracks, artistTracks, artistAlbums, playlistTracks,
+    setView, selectAlbum, playTrack, load, loadMore, selectedAlbum, albumTracks, artistTracks, playlistTracks, allTracks,
   } = useLibrary()
 
   const needle = query.trim().toLowerCase()
@@ -32,12 +33,14 @@ export function AppShell() {
     : albums
 
   const isDetail = view === 'album-detail' || view === 'artist-detail' || view === 'playlist-detail'
+  const isTracks = view === 'tracks'
+  const currentView = view
 
   // Content-only component - no header, no player bar, no mini-player
   // Native GTK handles header, player bar, right panel
   return (
     <main className="webview-content" role="main">
-      {isDetail && view === 'album-detail' && selectedAlbum ? (
+      {isDetail && currentView === 'album-detail' && selectedAlbum ? (
         <AlbumDetailPage
           album={selectedAlbum}
           tracks={albumTracks}
@@ -46,7 +49,7 @@ export function AppShell() {
           onPlayAlbum={() => selectedAlbum && playTrack(selectedAlbum.id)}
           playingTrackId={playback.trackId}
         />
-      ) : isDetail && view === 'artist-detail' && selectedAlbum ? (
+      ) : isDetail && currentView === 'artist-detail' && selectedAlbum ? (
         // Artist detail view
         <div className="detail">
           <div className="detail__hero">
@@ -69,7 +72,7 @@ export function AppShell() {
             <TrackList tracks={artistTracks} onPlay={playTrack} playingTrackId={playback.trackId} />
           </div>
         </div>
-      ) : isDetail && view === 'playlist-detail' && selectedAlbum ? (
+      ) : isDetail && currentView === 'playlist-detail' && selectedAlbum ? (
         <div className="detail">
           <div className="detail__hero">
             <div className="detail__art" aria-hidden="true">
@@ -91,6 +94,8 @@ export function AppShell() {
             <TrackList tracks={playlistTracks} onPlay={playTrack} playingTrackId={playback.trackId} />
           </div>
         </div>
+      ) : isTracks ? (
+        <TracksView tracks={allTracks} onPlay={playTrack} onBack={() => setView('albums')} playingTrackId={playback.trackId} />
       ) : (
         <>
           <div className="section__head">
