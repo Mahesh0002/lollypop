@@ -102,6 +102,16 @@ class ApplicationActions:
         App().add_action(webview_action)
         App().set_accels_for_action("app.webview", ["<Shift><Alt>w"])
 
+        # Toggle sidebar collapse
+        sidebar_action = Gio.SimpleAction.new_stateful(
+                "sidebar",
+                None,
+                GLib.Variant.new_boolean(False))
+        sidebar_action.connect("activate",
+                               self.__on_sidebar_activate)
+        App().add_action(sidebar_action)
+        App().set_accels_for_action("app.sidebar", ["<Control>b"])
+
         # Special action to queue a view reload
         reload_action = Gio.SimpleAction.new_stateful(
                 "reload",
@@ -214,6 +224,20 @@ class ApplicationActions:
         if App().window is None:
             return
         App().window.container.show_webview(show)
+
+    def __on_sidebar_activate(self, action, value):
+        """
+            Toggle the sidebar collapse state.
+            @param action as Gio.SimpleAction
+            @param value as GLib.Variant or None
+        """
+        state = action.get_state()
+        folded = not state.get_boolean()
+        action.set_state(GLib.Variant.new_boolean(folded))
+        if App().window is None:
+            return
+        # Fold/unfold the main leaflet
+        App().window.container.widget.set_folded(folded)
 
     def __on_fullscreen_change_state(self, action, value):
         """

@@ -10,11 +10,11 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-from gi.repository import Gtk, GLib, Handy
+from gi.repository import Gtk, GLib, Handy, Gdk
 
 from lollypop.define import App, ScanType, ArtSize
 from lollypop.container import Container
-from lollypop.toolbar import Toolbar
+from lollypop.toolbar_custom import CustomHeaderBar
 from lollypop.utils import emit_signal
 from lollypop.helper_signals import SignalsHelper, signals_map
 from lollypop.logger import Logger
@@ -57,14 +57,99 @@ class Window(Handy.ApplicationWindow, SignalsHelper):
         self.__container = Container()
         self.__container.setup()
         self.__container.show()
-        self.__toolbar = Toolbar(self)
+        self.__toolbar = CustomHeaderBar(self)
         self.__toolbar.show()
         self.__vgrid.add(self.__toolbar)
-        self.__toolbar.set_show_close_button(True)
         self.__vgrid.add(self.__container)
         self.add(self.__vgrid)
         self.__container.widget.connect("notify::folded",
                                         self.__on_container_folded)
+
+        # Add keyboard shortcuts
+        self.__setup_shortcuts()
+
+    def __setup_shortcuts(self):
+        """Setup keyboard shortcuts for the window"""
+        accel_group = Gtk.AccelGroup()
+        self.add_accel_group(accel_group)
+
+        # Space - Play/Pause
+        key, mod = Gtk.accelerator_parse("space")
+        accel_group.connect(key, mod, Gtk.AccelFlags.VISIBLE, self.__on_play_pause_shortcut)
+
+        # Left/Right arrows - Seek ±10s
+        key, mod = Gtk.accelerator_parse("Left")
+        accel_group.connect(key, mod, Gtk.AccelFlags.VISIBLE, lambda *a: self.__on_seek_shortcut(-10))
+        key, mod = Gtk.accelerator_parse("Right")
+        accel_group.connect(key, mod, Gtk.AccelFlags.VISIBLE, lambda *a: self.__on_seek_shortcut(10))
+
+        # Up/Down arrows - Volume
+        key, mod = Gtk.accelerator_parse("Up")
+        accel_group.connect(key, mod, Gtk.AccelFlags.VISIBLE, lambda *a: self.__on_volume_shortcut(0.05))
+        key, mod = Gtk.accelerator_parse("Down")
+        accel_group.connect(key, mod, Gtk.AccelFlags.VISIBLE, lambda *a: self.__on_volume_shortcut(-0.05))
+
+        # Ctrl+L - Focus search
+        key, mod = Gtk.accelerator_parse("<Control>l")
+        accel_group.connect(key, mod, Gtk.AccelFlags.VISIBLE, self.__on_focus_search_shortcut)
+
+        # M - Toggle mini-player
+        key, mod = Gtk.accelerator_parse("m")
+        accel_group.connect(key, mod, Gtk.AccelFlags.VISIBLE, self.__on_toggle_miniplayer_shortcut)
+
+        # F - Fullscreen artwork (handled by SPA)
+        key, mod = Gtk.accelerator_parse("f")
+        accel_group.connect(key, mod, Gtk.AccelFlags.VISIBLE, self.__on_fullscreen_artwork_shortcut)
+
+    def __on_play_pause_shortcut(self, *args):
+        """Handle Space key for play/pause"""
+        if App().player.is_playing:
+            App().player.pause()
+        else:
+            App().player.play()
+        return True
+
+    def __on_seek_shortcut(self, direction):
+        """Handle Left/Right arrows for seeking"""
+        position = App().player.position + (direction * 10000)  # 10 seconds in ms
+        position = max(0, min(position, App().player.current_track.duration * 1000 if App().player.current_track.duration else position))
+        App().player.seek(position)
+        return True
+
+    def __on_volume_shortcut(self, delta):
+        """Handle Up/Down arrows for volume"""
+        current_volume = App().player.volume if hasattr(App().player, 'volume') else 1.0
+        new_volume = max(0.0, min(1.0, current_volume + delta))
+        App().player.set_volume(new_volume)
+        # Also notify SPA
+        if App().window.container.webview:
+            App().window.container.webview.ipc.send({
+                "type": "SET_VOLUME",
+                "payload": {"volume": new_volume}
+            })
+        return True
+
+    def __on_focus_search_shortcut(self, *args):
+        """Handle Ctrl+L to focus search"""
+        if hasattr(self, '__toolbar') and self.__toolbar.search_entry:
+            self.__toolbar.search_entry.grab_focus()
+        return True
+
+    def __on_toggle_miniplayer_shortcut(self, *args):
+        """Handle M key to toggle mini-player"""
+        action = App().lookup_action("miniplayer")
+        state = action.get_state()
+        action.change_state(GLib.Variant("b", not state.get_boolean()))
+        return True
+
+    def __on_fullscreen_artwork_shortcut(self, *args):
+        """Handle F key for fullscreen artwork - notify SPA"""
+        if App().window.container.webview:
+            App().window.container.webview.ipc.send({
+                "type": "NAVIGATE",
+                "payload": {"view": "fullscreen-artwork"}
+            })
+        return True
 
     def show_miniplayer(self, show, reveal=False):
         """
@@ -134,7 +219,7 @@ class Window(Handy.ApplicationWindow, SignalsHelper):
     @property
     def toolbar(self):
         """
-            @return Toolbar
+            @return CustomHeaderBar
         """
         return self.__toolbar
 
