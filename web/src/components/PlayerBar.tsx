@@ -1,4 +1,4 @@
-import { Heart, Pause, Play, Repeat, Shuffle, SkipBack, SkipForward, Volume2 } from 'lucide-react'
+import { Heart, Pause, Play, Repeat, Shuffle, SkipBack, SkipForward, Volume2, ChevronUp } from 'lucide-react'
 import { formatTime, initials } from '../lib/format'
 import type { Playback } from '../store/useLibrary'
 
@@ -6,10 +6,12 @@ type Props = {
   playback: Playback
   onToggle: () => void
   onSeek: (position: number) => void
+  onSetVolume: (volume: number) => void
+  onOpenMiniPlayer: () => void
 }
 
-export function PlayerBar({ playback, onToggle, onSeek }: Props) {
-  const { playing, title, artist, position, duration } = playback
+export function PlayerBar({ playback, onToggle, onSeek, onSetVolume, onOpenMiniPlayer }: Props) {
+  const { playing, title, artist, position, duration, volume } = playback
   const percent = duration > 0 ? Math.min(100, (position / duration) * 100) : 0
   const hasTrack = title !== null
 
@@ -17,9 +19,15 @@ export function PlayerBar({ playback, onToggle, onSeek }: Props) {
     <footer className="shell__player">
       <div className="player">
         <div className="player__now">
-          <div className="player__art" aria-hidden="true">
+          <button
+            type="button"
+            className="player__art"
+            aria-hidden="true"
+            onClick={onOpenMiniPlayer}
+            aria-label="Open mini player"
+          >
             {hasTrack ? initials(title!) : '♪'}
-          </div>
+          </button>
           <div className="player__meta">
             <div className="player__title">{title ?? 'Not Playing'}</div>
             <div className="player__artist">{artist ?? '—'}</div>
@@ -79,8 +87,26 @@ export function PlayerBar({ playback, onToggle, onSeek }: Props) {
         </div>
 
         <div className="player__right">
-          <button type="button" className="iconbtn" aria-label="Volume">
-            <Volume2 size={16} />
+          <div className="player__volume">
+            <Volume2 size={16} className="player__volume-icon" />
+            <input
+              type="range"
+              className="player__volume-slider"
+              min={0}
+              max={1}
+              step={0.01}
+              value={volume}
+              onChange={(e) => onSetVolume(Number(e.target.value))}
+              aria-label="Volume"
+            />
+          </div>
+          <button
+            type="button"
+            className="iconbtn"
+            aria-label="Open mini player"
+            onClick={onOpenMiniPlayer}
+          >
+            <ChevronUp size={16} />
           </button>
         </div>
       </div>

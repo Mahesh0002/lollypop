@@ -35,6 +35,8 @@ from lollypop.logger import Logger
 LIBRARY_LIMIT = 300
 # Default page size for paginated loads
 LIBRARY_PAGE_SIZE = 100
+# Position tick interval (ms) for PLAYBACK_POSITION updates
+POSITION_TICK_INTERVAL = 500
 
 # Override to point at a dev server or an alternate build.
 ENV_WEB_DIR = "LOLLYPOP_WEB_DIR"
@@ -127,6 +129,7 @@ class WebViewContainer(Gtk.Box):
         self.__ipc.on("PLAY", self.__on_play)
         self.__ipc.on("PAUSE", self.__on_pause)
         self.__ipc.on("SEEK", self.__on_seek)
+        self.__ipc.on("SET_VOLUME", self.__on_set_volume)
         self.__ipc.on("NAVIGATE", self.__on_navigate)
         # Connect to player signals for PLAYBACK_STATE updates
         self.__connect_player_signals()
@@ -200,6 +203,9 @@ class WebViewContainer(Gtk.Box):
             App().player.connect("notify::is-playing", self.__on_playing_changed)
             # Listen for position updates (emitted periodically)
             App().player.connect("notify::position", self.__on_position_changed)
+            # Start periodic position tick for smooth progress bar
+            self.__position_tick_id = GLib.timeout_add(
+                POSITION_TICK_INTERVAL, self.__emit_position_tick)
         except Exception as e:
             Logger.warning("WebViewContainer: player signals unavailable: %s", e)
 
@@ -229,6 +235,23 @@ class WebViewContainer(Gtk.Box):
     def __on_position_changed(self, *args):
         # Throttle position updates to avoid flooding
         self.__emit_playback_state()
+
+    def __emit_position_tick(self):
+        """Emit periodic position tick for smooth progress bar (returns True to continue)"""
+        try:
+            if App().player.is_playing:
+                track = App().player.current_track
+                if track and track.id:
+                    self.__ipc.send({
+                        "type": "PLAYBACK_POSITION",
+                        "payload": {
+                            "position": App().player.position / 1000.0,
+                            "duration": track.duration,
+                        }
+                    })
+        except Exception as e:
+            Logger.debug("WebViewContainer::__emit_position_tick(): %s", e)
+        return True  # Continue the timeout
 
     def __on_get_library(self, payload, message):
         """
@@ -332,6 +355,16 @@ class WebViewContainer(Gtk.Box):
             App().player.seek(position)
         except Exception as e:
             Logger.error("WebViewContainer::__on_seek(): %s", e)
+
+    def __on_set_volume(self, payload, message):
+        """SPA requests volume change"""
+        if not payload or "volume" not in payload:
+            return
+        volume = max(0.0, min(1.0, float(payload["volume"])))
+        try:
+            App().player.set_volume(volume)
+        except Exception as e:
+            Logger.error("WebViewContainer::__on_set_volume(): %s", e)
 
     def __on_navigate(self, payload, message):
         """

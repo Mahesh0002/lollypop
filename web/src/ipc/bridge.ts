@@ -36,6 +36,10 @@ export type PayloadMap = {
     position: number
     duration: number
   }
+  PLAYBACK_POSITION: {
+    position: number
+    duration: number
+  }
   ERROR: { message: string }
 }
 
@@ -50,6 +54,7 @@ export type Outbound =
   | { type: 'PLAY'; payload: { trackId: number; queue?: number[] } }
   | { type: 'PAUSE' }
   | { type: 'SEEK'; payload: { position: number } }
+  | { type: 'SET_VOLUME'; payload: { volume: number } }
   | { type: 'SEARCH'; payload: { query: string } }
 
 export interface Album {

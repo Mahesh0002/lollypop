@@ -1,8 +1,10 @@
+import { useState } from 'react'
 import { Sidebar } from './Sidebar'
 import { TopBar } from './TopBar'
 import { PlayerBar } from './PlayerBar'
 import { AlbumGrid } from './AlbumGrid'
 import { AlbumDetailPage } from './AlbumDetailPage'
+import { MiniPlayer } from './MiniPlayer'
 import { useLibrary } from '../store/useLibrary'
 import type { ViewId } from '../store/useLibrary'
 
@@ -17,7 +19,7 @@ const TITLES: Record<ViewId, string> = {
 export function AppShell() {
   const {
     albums, total, truncated, loading, online, query, view, playback,
-    setQuery, setView, selectAlbum, playTrack, togglePlay, seek, load, loadMore, selectedAlbum, albumTracks,
+    setQuery, setView, selectAlbum, playTrack, togglePlay, seek, load, loadMore, selectedAlbum, albumTracks, setVolume,
   } = useLibrary()
 
   const needle = query.trim().toLowerCase()
@@ -30,6 +32,7 @@ export function AppShell() {
     : albums
 
   const isDetail = view === 'album-detail'
+  const [miniPlayerOpen, setMiniPlayerOpen] = useState(false)
 
   return (
     <div className="shell">
@@ -105,7 +108,24 @@ export function AppShell() {
           )}
         </main>
 
-        <PlayerBar playback={playback} onToggle={togglePlay} onSeek={seek} />
+        <PlayerBar
+          playback={playback}
+          onToggle={togglePlay}
+          onSeek={seek}
+          onSetVolume={setVolume}
+          onOpenMiniPlayer={() => setMiniPlayerOpen(true)}
+        />
+
+        <MiniPlayer
+          isOpen={miniPlayerOpen}
+          onClose={() => setMiniPlayerOpen(false)}
+          playback={playback}
+          albumTracks={albumTracks}
+          onPlayTrack={playTrack}
+          onTogglePlay={togglePlay}
+          onSeek={seek}
+          onSetVolume={setVolume}
+        />
       </div>
     </div>
   )

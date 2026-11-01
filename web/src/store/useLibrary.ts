@@ -16,6 +16,7 @@ export type Playback = {
   artist: string | null
   position: number
   duration: number
+  volume: number
 }
 
 type LibraryState = {
@@ -44,6 +45,7 @@ type LibraryState = {
   playTrack: (trackId: number, queue?: number[]) => void
   togglePlay: () => void
   seek: (position: number) => void
+  setVolume: (volume: number) => void
 }
 
 const idle: Playback = {
@@ -53,6 +55,7 @@ const idle: Playback = {
   artist: null,
   position: 0,
   duration: 0,
+  volume: 1.0,
 }
 
 export const useLibrary = create<LibraryState>((set, get) => ({
@@ -119,6 +122,12 @@ export const useLibrary = create<LibraryState>((set, get) => ({
     bridge.send({ type: 'SEEK', payload: { position } })
     set({ playback: { ...get().playback, position } })
   },
+
+  setVolume: (volume) => {
+    const v = Math.max(0, Math.min(1, volume))
+    bridge.send({ type: 'SET_VOLUME', payload: { volume: v } })
+    set({ playback: { ...get().playback, volume: v } })
+  },
 }))
 
 /* ===== Host → app subscriptions (module scope, once) ===== */
@@ -167,6 +176,18 @@ bridge.on('PLAYBACK_STATE', (payload) => {
       duration: payload.duration ?? state.duration,
       title: state.title,
       artist: state.artist,
+      volume: state.volume,
+    },
+  })
+})
+
+bridge.on('PLAYBACK_POSITION', (payload) => {
+  const state = useLibrary.getState().playback
+  useLibrary.setState({
+    playback: {
+      ...state,
+      position: payload.position,
+      duration: payload.duration,
     },
   })
 })
