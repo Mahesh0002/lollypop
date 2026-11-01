@@ -90,3 +90,7 @@ flatpak/metadata
 /builddir
 .vscode/
 /dist
+
+# Frontend toolchain: source lives in web/, the built bundle is emitted to
+# data/web/ (tracked) so `meson install` works on a machine without node.
+web/node_modules/

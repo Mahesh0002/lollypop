@@ -22,7 +22,7 @@ import os
 
 import gi
 gi.require_version("WebKit2", "4.1")
-from gi.repository import Gtk, Gio, GLib, WebKit2
+from gi.repository import Gtk, Gdk, Gio, GLib, WebKit2
 
 from lollypop.define import App, StorageType
 from lollypop.web_ipc import WebIPC
@@ -99,6 +99,16 @@ class WebViewContainer(Gtk.Box):
         self.__webview = WebKit2.WebView.new_with_user_content_manager(
             self.__ipc.content_manager)
         self.__webview.set_settings(settings)
+        # Lollypop's GTK CSS makes the window background transparent
+        # (rounded corners under the compositor). Without an opaque
+        # WebView background the desktop shows through the page and every
+        # backdrop-filter blurs the wallpaper instead of the UI.
+        bg = Gdk.RGBA()
+        bg.parse("#181818")
+        try:
+            self.__webview.set_background_color(bg)
+        except Exception as e:
+            Logger.warning("WebViewContainer: no set_background_color: %s", e)
         self.__webview.set_hexpand(True)
         self.__webview.set_vexpand(True)
         self.__webview.connect("load-failed", self.__on_load_failed)
