@@ -15,6 +15,11 @@ from gi.repository import Gtk, GLib, Handy, Gdk
 from lollypop.define import App, ScanType, ArtSize
 from lollypop.container import Container
 from lollypop.toolbar_custom import CustomHeaderBar
+from lollypop.player_bar import PlayerBar
+from lollypop.widget_injector import install_right_panel
+from lollypop.color_extractor import (
+    PaletteStyler, PageStyler, AmbientStyler, extract_palette)
+from lollypop.accent_provider import WallpaperAccentProvider
 from lollypop.utils import emit_signal
 from lollypop.helper_signals import SignalsHelper, signals_map
 from lollypop.logger import Logger
@@ -59,11 +64,35 @@ class Window(Handy.ApplicationWindow, SignalsHelper):
         self.__container.show()
         self.__toolbar = CustomHeaderBar(self)
         self.__toolbar.show()
-        self.__vgrid.add(self.__toolbar)
-        self.__vgrid.add(self.__container)
+
+        # Layout: headerbar at top, content (container + right panel) in middle,
+        # player bar at bottom
+        self.__vgrid.attach(self.__toolbar, 0, 0, 1, 1)
+        self.__vgrid.attach(self.__container, 0, 1, 1, 1)
+
+        # Install right panel (visualizer, lyrics, queue) from extension.
+        # This replaces self.__container in the grid with a box containing
+        # the container + right panel side by side.
+        install_right_panel(self.__vgrid, self.__container, self.__toolbar)
+
+        # Apple Music style bottom player bar (from extension)
+        self.__player_bar = PlayerBar()
+        self.__player_bar.show()
+        self.__vgrid.attach(self.__player_bar, 0, 2, 1, 1)
+
+        self.__vgrid.set_row_spacing(0)
+        self.__vgrid.set_row_homogeneous(False)
+
         self.add(self.__vgrid)
         self.__container.widget.connect("notify::folded",
                                         self.__on_container_folded)
+
+        # Initialize color extraction for dynamic theming
+        self.__init_color_extraction()
+
+        # Initialize wallpaper accent provider
+        self.__accent_provider = WallpaperAccentProvider()
+        self.__accent_provider.start()
 
         # Add keyboard shortcuts
         self.__setup_shortcuts()
@@ -150,6 +179,23 @@ class Window(Handy.ApplicationWindow, SignalsHelper):
                 "payload": {"view": "fullscreen-artwork"}
             })
         return True
+
+    def __init_color_extraction(self):
+        """Initialize color extraction for dynamic theming"""
+        try:
+            # Extract palette from current track artwork
+            player = App().player
+            if player and player.current_track and player.current_track.id:
+                track = player.current_track
+                if track.uri:
+                    palette = extract_palette(track.uri)
+                    if palette:
+                        # Apply palette stylers
+                        PaletteStyler(palette)
+                        PageStyler(palette)
+                        AmbientStyler(palette)
+        except Exception as e:
+            Logger.debug("Color extraction init failed: %s", e)
 
     def show_miniplayer(self, show, reveal=False):
         """

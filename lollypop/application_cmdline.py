@@ -220,7 +220,7 @@ class ApplicationCmdline:
             Gdk.notify_startup_complete()
         except Exception as e:
             Logger.error("Application::__on_command_line(): %s", e)
-        return 0
+        return -1
 
     def __on_parse_finished(self, source, result, playlist_uris, audio_uris):
         """

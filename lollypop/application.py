@@ -11,6 +11,7 @@
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 import gi
+import sys
 gi.require_version("Gst", "1.0")
 gi.require_version("Gtk", "3.0")
 gi.require_version("GstAudio", "1.0")
@@ -99,7 +100,7 @@ class Application(Gtk.Application, ApplicationActions, ApplicationCmdline):
         self.animations = settings.get_value("enable-animations").get_boolean()
         GLib.set_application_name("Lollypop")
         GLib.set_prgname("org.gnome.Lollypop")
-        self.connect("activate", self.__on_activate)
+        # Use do_activate instead of custom signal handler
         self.connect("shutdown", lambda a: self.__save_state())
         if GLib.environ_getenv(GLib.get_environ(), "DEBUG_LEAK") is not None:
             import gc
@@ -196,6 +197,20 @@ class Application(Gtk.Application, ApplicationActions, ApplicationCmdline):
             self.__window.setup()
             self.__window.show()
             self.player.restore_state()
+
+    def do_activate(self):
+        """
+            Activate application - present the main window
+        """
+        if self.__window is not None:
+            self.__window.present()
+
+    def do_command_line(self, command_line):
+        """
+            Handle command line arguments
+        """
+        self.activate()
+        return 0
 
     def quit(self, vacuum=False, wait=100):
         """
@@ -380,11 +395,4 @@ class Application(Gtk.Application, ApplicationActions, ApplicationCmdline):
                 not self.player.is_playing:
             GLib.idle_add(self.quit, True)
         return widget.hide_on_delete()
-
-    def __on_activate(self, application):
-        """
-            Call default handler
-            @param application as Gio.Application
-        """
-        self.__window.present()
 
