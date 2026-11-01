@@ -122,17 +122,27 @@ class Container(Gtk.Overlay, NotificationContainer,
 
     def show_webview(self, show):
         """
-            Show the SPA (Apple Music UI) instead of the native views
+            Show the SPA (Apple Music UI) in the content area, keeping sidebar visible
             @param show as bool
         """
         if show and self.__webview is None:
             self.__webview = WebViewContainer()
-            self._main_stack.add_named(self.__webview, "web")
             self.__webview.show_all()
+
         if show:
-            self._main_stack.set_visible_child_name("web")
+            # Embed WebView in content area (replacing grid_view) while keeping sidebar visible
+            if self.__sub_widget.get_visible_child() != self.__webview:
+                if self.__webview.get_parent():
+                    self.__webview.get_parent().remove(self.__webview)
+                self.__sub_widget.remove(self.__grid_view)
+                self.__sub_widget.add(self.__webview)
+                self.__sub_widget.set_visible_child(self.__webview)
         else:
-            self._main_stack.set_visible_child_name("main")
+            # Restore native views
+            if self.__sub_widget.get_visible_child() == self.__webview:
+                self.__sub_widget.remove(self.__webview)
+                self.__sub_widget.add(self.__grid_view)
+                self.__sub_widget.set_visible_child(self.__grid_view)
         emit_signal(self, "can-go-back-changed", self.can_go_back)
 
     @property
@@ -143,7 +153,7 @@ class Container(Gtk.Overlay, NotificationContainer,
         """
         if self.__webview is None:
             return False
-        return self._main_stack.get_visible_child() is self.__webview
+        return self.__sub_widget.get_visible_child() is self.__webview
 
     @property
     def webview(self):
