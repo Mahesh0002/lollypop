@@ -25,9 +25,9 @@ gi.require_version("WebKit2", "4.1")
 from gi.repository import Gtk, Gdk, Gio, GLib, WebKit2
 
 from lollypop.objects_album import Album
+from lollypop.objects_track import Track
 from lollypop.define import App, StorageType, ArtSize
 
-# Use real Album object for cover path lookup (has all needed attrs)
 from lollypop.web_ipc import WebIPC
 from lollypop.logger import Logger
 
@@ -162,9 +162,9 @@ class WebViewContainer(Gtk.Box):
         """
         self.__webview.reload()
 
-############
-# PRIVATE  #
-############
+    ############
+    # PRIVATE  #
+    ############
     def __load(self):
         """
             Load the SPA
@@ -325,7 +325,7 @@ class WebViewContainer(Gtk.Box):
         queue = payload.get("queue", [])
         try:
             # Get the track object and play it
-            track = App().tracks.get_track(track_id)
+            track = Track(track_id)
             if track and track.id:
                 # If queue provided, set up the playlist
                 if queue:
@@ -393,12 +393,10 @@ class WebViewContainer(Gtk.Box):
             album = Album(album_id)
             if album.id is None:
                 return
-            # Get tracks for this album
-            track_ids = App().albums.get_disc_track_ids(album_id, [], [], True)
+            # Get tracks for this album using Album's tracks property
             tracks = []
-            for tid in track_ids:
+            for track in album.tracks:
                 try:
-                    track = App().tracks.get_track(tid)
                     if track and track.id:
                         tracks.append({
                             "id": track.id,
@@ -440,12 +438,13 @@ class WebViewContainer(Gtk.Box):
     def __load_album_tracks(self, album_id):
         """Load just tracks for an album (for TrackList view)"""
         try:
-            track_ids = App().albums.get_disc_track_ids(album_id, [], [], True)
+            album = Album(album_id)
+            if album.id is None:
+                return
             tracks = []
-            for tid in track_ids:
+            for track in album.tracks:
                 try:
-                    track = App().tracks.get_track(tid)
-                    if track:
+                    if track and track.id:
                         tracks.append({
                             "id": track.id,
                             "name": track.name,
