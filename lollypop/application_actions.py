@@ -92,6 +92,16 @@ class ApplicationActions:
         App().set_accels_for_action("app.search('')", ["<Control>f"])
         search_action.connect("activate", self.__on_search_activate)
 
+        # Toggle the SPA (Apple Music UI WebView)
+        webview_action = Gio.SimpleAction.new_stateful(
+                "webview",
+                None,
+                GLib.Variant.new_boolean(False))
+        webview_action.connect("activate",
+                               self.__on_webview_activate)
+        App().add_action(webview_action)
+        App().set_accels_for_action("app.webview", ["<Shift><Alt>w"])
+
         # Special action to queue a view reload
         reload_action = Gio.SimpleAction.new_stateful(
                 "reload",
@@ -189,6 +199,21 @@ class ApplicationActions:
         """
         search = value.get_string()
         App().window.container.show_view([Type.SEARCH], search)
+
+    def __on_webview_activate(self, action, value):
+        """
+            Toggle the SPA. Boolean stateful actions do not flip on their
+            own, so the toggle lives here and works for both the accel and
+            org.gtk.Actions.Activate over D-Bus.
+            @param action as Gio.SimpleAction
+            @param value as GLib.Variant or None
+        """
+        state = action.get_state()
+        show = not state.get_boolean()
+        action.set_state(GLib.Variant.new_boolean(show))
+        if App().window is None:
+            return
+        App().window.container.show_webview(show)
 
     def __on_fullscreen_change_state(self, action, value):
         """

@@ -89,3 +89,4 @@ flatpak/metadata
 /local
 /builddir
 .vscode/
+/dist

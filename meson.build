@@ -31,6 +31,8 @@ dependency('gtk+-3.0', version: '>= 3.22')
 dependency('libsoup-3.0')
 dependency('glib-2.0')
 dependency('pygobject-3.0', version: '>= 3.29.1')
+# SPA host (Apple Music UI). GTK3 path -> WebKit2 4.1, not webkitgtk-6.0.
+dependency('webkit2gtk-4.1')
 
 python_dir = join_paths(get_option('prefix'), py_installation.get_install_dir())
 LIBEXEC_DIR = join_paths(get_option('prefix'), get_option('libexecdir'))

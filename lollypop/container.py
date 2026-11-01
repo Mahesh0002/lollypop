@@ -23,6 +23,7 @@ from lollypop.container_lists import ListsContainer
 from lollypop.container_views import ViewsContainer
 from lollypop.container_filter import FilterContainer
 from lollypop.progressbar import ProgressBar
+from lollypop.webview_container import WebViewContainer
 
 
 class Grid(Gtk.Grid):
@@ -58,6 +59,8 @@ class Container(Gtk.Overlay, NotificationContainer,
         """
         self._main_stack = Gtk.Stack()
         self._main_stack.show()
+        # SPA page, created lazily by show_webview()
+        self.__webview = None
         self.__widget = Handy.Leaflet()
         self.__widget.show()
         self.__widget.connect("notify::folded", self.__on_folded)
@@ -117,10 +120,45 @@ class Container(Gtk.Overlay, NotificationContainer,
         """
         self.__focused_view = view
 
+    def show_webview(self, show):
+        """
+            Show the SPA (Apple Music UI) instead of the native views
+            @param show as bool
+        """
+        if show and self.__webview is None:
+            self.__webview = WebViewContainer()
+            self._main_stack.add_named(self.__webview, "web")
+            self.__webview.show_all()
+        if show:
+            self._main_stack.set_visible_child_name("web")
+        else:
+            self._main_stack.set_visible_child_name("main")
+        emit_signal(self, "can-go-back-changed", self.can_go_back)
+
+    @property
+    def web_shown(self):
+        """
+            True if the SPA is the visible page
+            @return bool
+        """
+        if self.__webview is None:
+            return False
+        return self._main_stack.get_visible_child() is self.__webview
+
+    @property
+    def webview(self):
+        """
+            SPA host, None until first show_webview(True)
+            @return WebViewContainer
+        """
+        return self.__webview
+
     def go_home(self):
         """
             Go back to first page
         """
+        if self.web_shown:
+            self.show_webview(False)
         self.__widget.set_visible_child(self.sidebar)
         self._stack.clear()
         emit_signal(self, "can-go-back-changed", False)
@@ -129,6 +167,9 @@ class Container(Gtk.Overlay, NotificationContainer,
         """
             Go back in history
         """
+        if self.web_shown:
+            self.show_webview(False)
+            return
         if self._stack.history.count > 0:
             self._stack.go_back()
             self.set_focused_view(self._stack.get_visible_child())
