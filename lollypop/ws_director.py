@@ -47,9 +47,10 @@ class DirectorWebService:
         else:
             network_acl = App().settings.get_value(
                 "network-access-acl").get_int32()
+        # DISABLED: online plugins moved to plugins.disabled/
+        # self.__handle_lastfm(network_acl)
+        # self.__handle_listenbrainz(network_acl)
         self.__handle_collection(network_acl)
-        self.__handle_lastfm(network_acl)
-        self.__handle_listenbrainz(network_acl)
 
     def stop(self):
         """
@@ -57,15 +58,16 @@ class DirectorWebService:
             @return bool
         """
         stopped = stopping = 0
-        if self.__lastfm_ws is not None:
-            stopping += 1
-            stopped += self.__lastfm_ws.stop()
-        if self.__librefm_ws is not None:
-            stopping += 1
-            stopped += self.__librefm_ws.stop()
-        if self.__listenbrainz_ws is not None:
-            stopping += 1
-            stopped += self.__listenbrainz_ws.stop()
+        # DISABLED: online plugins moved to plugins.disabled/
+        # if self.__lastfm_ws is not None:
+        #     stopping += 1
+        #     stopped += self.__lastfm_ws.stop()
+        # if self.__librefm_ws is not None:
+        #     stopping += 1
+        #     stopped += self.__librefm_ws.stop()
+        # if self.__listenbrainz_ws is not None:
+        #     stopping += 1
+        #     stopped += self.__listenbrainz_ws.stop()
         if self.__collection_ws is not None:
             stopping += 1
             stopped += self.__collection_ws.stop()
@@ -77,12 +79,8 @@ class DirectorWebService:
             Get all scrobbling services
             @return [LastFMWebService/ListenBrainzWebService]
         """
-        web_services = []
-        for ws in [self.__lastfm_ws, self.__librefm_ws,
-                   self.__listenbrainz_ws]:
-            if ws is not None:
-                web_services.append(ws)
-        return web_services
+        # DISABLED: online plugins moved to plugins.disabled/
+        return []
 
     @property
     def lastfm_ws(self):
@@ -90,7 +88,8 @@ class DirectorWebService:
             Get Last.fm web service
             @return TokenWebService
         """
-        return self.__lastfm_ws
+        # DISABLED: online plugins moved to plugins.disabled/
+        return None
 
     @property
     def token_ws(self):
@@ -137,49 +136,50 @@ class DirectorWebService:
             self.__collection_ws = None
             Logger.info("Collection web service stopping")
 
-    def __handle_lastfm(self, acl):
-        """
-            Start/stop Last.fm based on acl
-            @param acl as int
-        """
-        start = acl & NetworkAccessACL["LASTFM"]
-        if start and self.__lastfm_ws is None:
-            from lollypop.ws_lastfm import LastFMWebService
-            self.__lastfm_ws = LastFMWebService("LASTFM")
-            self.__lastfm_ws.start()
-            Logger.info("Last.fm web service started")
-        elif not start and self.__lastfm_ws is not None:
-            self.__lastfm_ws = None
-            Logger.info("Last.fm web service stopping")
-        start = acl & NetworkAccessACL["LIBREFM"]
-        if start and self.__librefm_ws is None:
-            from lollypop.ws_lastfm import LastFMWebService
-            self.__librefm_ws = LastFMWebService("LIBREFM")
-            self.__librefm_ws.start()
-            Logger.info("Libre.fm web service started")
-        elif not start and self.__librefm_ws is not None:
-            self.__librefm_ws = None
-            Logger.info("Libre.fm web service stopping")
+    # DISABLED: online plugins moved to plugins.disabled/
+    # def __handle_lastfm(self, acl):
+    #     """
+    #         Start/stop Last.fm based on acl
+    #         @param acl as int
+    #     """
+    #     start = acl & NetworkAccessACL["LASTFM"]
+    #     if start and self.__lastfm_ws is None:
+    #         from lollypop.ws_lastfm import LastFMWebService
+    #         self.__lastfm_ws = LastFMWebService("LASTFM")
+    #         self.__lastfm_ws.start()
+    #         Logger.info("Last.fm web service started")
+    #     elif not start and self.__lastfm_ws is not None:
+    #         self.__lastfm_ws = None
+    #         Logger.info("Last.fm web service stopping")
+    #     start = acl & NetworkAccessACL["LIBREFM"]
+    #     if start and self.__librefm_ws is None:
+    #         from lollypop.ws_lastfm import LastFMWebService
+    #         self.__librefm_ws = LastFMWebService("LIBREFM")
+    #         self.__librefm_ws.start()
+    #         Logger.info("Libre.fm web service started")
+    #     elif not start and self.__librefm_ws is not None:
+    #         self.__librefm_ws = None
+    #         Logger.info("Libre.fm web service stopping")
 
-    def __handle_listenbrainz(self, acl):
-        """
-            Start/stop ListenBrainz based on acl
-            @param acl as int
-        """
-        start = acl & NetworkAccessACL["MUSICBRAINZ"]
-        if start and self.__listenbrainz_ws is None:
-            from lollypop.ws_listenbrainz import ListenBrainzWebService
-            self.__listenbrainz_ws = ListenBrainzWebService()
-            self.__listenbrainz_ws.start()
-            App().settings.bind("listenbrainz-user-token",
-                                self.__listenbrainz_ws,
-                                "user_token", 0)
-            Logger.info("ListenBrainz web service started")
-        elif not start and self.__listenbrainz_ws is not None:
-            App().settings.unbind(self.__listenbrainz_ws,
-                                  "listenbrainz-user-token")
-            self.__listenbrainz_ws = None
-            Logger.info("ListenBrainz web service stopping")
+    # def __handle_listenbrainz(self, acl):
+    #     """
+    #         Start/stop ListenBrainz based on acl
+    #         @param acl as int
+    #     """
+    #     start = acl & NetworkAccessACL["MUSICBRAINZ"]
+    #     if start and self.__listenbrainz_ws is None:
+    #         from lollypop.ws_listenbrainz import ListenBrainzWebService
+    #         self.__listenbrainz_ws = ListenBrainzWebService()
+    #         self.__listenbrainz_ws.start()
+    #         App().settings.bind("listenbrainz-user-token",
+    #                             self.__listenbrainz_ws,
+    #                             "user_token", 0)
+    #         Logger.info("ListenBrainz web service started")
+    #     elif not start and self.__listenbrainz_ws is not None:
+    #         App().settings.unbind(self.__listenbrainz_ws,
+    #                               "listenbrainz-user-token")
+    #         self.__listenbrainz_ws = None
+    #         Logger.info("ListenBrainz web service stopping")
 
     def __on_network_access_acl_changed(self, *ignore):
         """

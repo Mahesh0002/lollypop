@@ -16,36 +16,42 @@ from time import time
 
 from lollypop.logger import Logger
 from lollypop.sqlcursor import SqlCursor
-from lollypop.ws_collection_spotify import SpotifyCollectionWebService
-from lollypop.ws_collection_deezer import DeezerCollectionWebService
+# DISABLED: online plugins moved to plugins.disabled/
+# from lollypop.ws_collection_spotify import SpotifyCollectionWebService
+# from lollypop.ws_collection_deezer import DeezerCollectionWebService
 from lollypop.helper_web_save import SaveWebHelper
 from lollypop.define import App, StorageType, NetworkAccessACL
 
 
-class CollectionWebService(SaveWebHelper,
-                           SpotifyCollectionWebService,
-                           DeezerCollectionWebService):
+# DISABLED: online plugins moved to plugins.disabled/
+# class CollectionWebService(SaveWebHelper,
+#                            SpotifyCollectionWebService,
+#                            DeezerCollectionWebService):
+class CollectionWebService(SaveWebHelper):
     """
         Add items to collection based on current user settings
     """
     MIN_ITEMS_PER_STORAGE_TYPE = 10
     MAX_ITEMS_PER_STORAGE_TYPE = 50
-    __METHODS = {
-        StorageType.SPOTIFY_SIMILARS:
-            SpotifyCollectionWebService.search_similar_albums,
-        StorageType.SPOTIFY_NEW_RELEASES:
-            SpotifyCollectionWebService.search_new_releases,
-        StorageType.DEEZER_CHARTS:
-            DeezerCollectionWebService.search_charts
-    }
+    # DISABLED: online plugins moved to plugins.disabled/
+    # __METHODS = {
+    #     StorageType.SPOTIFY_SIMILARS:
+    #         SpotifyCollectionWebService.search_similar_albums,
+    #     StorageType.SPOTIFY_NEW_RELEASES:
+    #         SpotifyCollectionWebService.search_new_releases,
+    #     StorageType.DEEZER_CHARTS:
+    #         DeezerCollectionWebService.search_charts
+    # }
+    __METHODS = {}
 
     def __init__(self):
         """
             Init object
         """
         SaveWebHelper.__init__(self)
-        SpotifyCollectionWebService.__init__(self)
-        DeezerCollectionWebService.__init__(self)
+        # DISABLED: online plugins moved to plugins.disabled/
+        # SpotifyCollectionWebService.__init__(self)
+        # DeezerCollectionWebService.__init__(self)
         self.__is_running = False
         self.__cancellable = Gio.Cancellable()
 
@@ -70,6 +76,7 @@ class CollectionWebService(SaveWebHelper,
 # PRIVATE             #
 #######################
     def __populate_db(self):
+    def __populate_db(self):
         """
             Populate DB in a background task
         """
@@ -80,38 +87,39 @@ class CollectionWebService(SaveWebHelper,
             Logger.info("Collection download started")
             self.__is_running = True
             self.__cancellable = Gio.Cancellable()
-            acl_storage_types = []
-            acl = App().settings.get_value("network-access-acl").get_int32()
-            mask = App().settings.get_value("suggestions-mask").get_int32()
-            if acl & NetworkAccessACL["SPOTIFY"]:
-                acl_storage_types += [StorageType.SPOTIFY_SIMILARS,
-                                      StorageType.SPOTIFY_NEW_RELEASES]
-            if acl & NetworkAccessACL["DEEZER"]:
-                acl_storage_types.append(StorageType.DEEZER_CHARTS)
-            # Check if storage type needs to be updated
-            # Check if albums newer than a week are enough
-            timestamp = time() - 604800
-            storage_types = []
-            for storage_type in acl_storage_types:
-                if not mask & storage_type:
-                    continue
-                newer_albums = App().albums.get_newer_for_storage_type(
-                                                           storage_type,
-                                                           timestamp)
-                if len(newer_albums) < self.MIN_ITEMS_PER_STORAGE_TYPE:
-                    storage_types.append(storage_type)
-            # Update needed storage types
-            if storage_types:
-                for storage_type in storage_types:
-                    if self.__cancellable.is_cancelled():
-                        raise Exception("cancelled")
-                    self.__METHODS[storage_type](self, self.__cancellable)
-                self.clean_old_albums(storage_types)
-                App().artists.update_featuring()
+            # DISABLED: online plugins moved to plugins.disabled/
+            # acl_storage_types = []
+            # acl = App().settings.get_value("network-access-acl").get_int32()
+            # mask = App().settings.get_value("suggestions-mask").get_int32()
+            # if acl & NetworkAccessACL["SPOTIFY"]:
+            #     acl_storage_types += [StorageType.SPOTIFY_SIMILARS,
+            #                           StorageType.SPOTIFY_NEW_RELEASES]
+            # if acl & NetworkAccessACL["DEEZER"]:
+            #     acl_storage_types.append(StorageType.DEEZER_CHARTS)
+            # # Check if storage type needs to be updated
+            # # Check if albums newer than a week are enough
+            # timestamp = time() - 604800
+            # storage_types = []
+            # for storage_type in acl_storage_types:
+            #     if not mask & storage_type:
+            #         continue
+            #     newer_albums = App().albums.get_newer_for_storage_type(
+            #                                                        storage_type,
+            #                                                        timestamp)
+            #     if len(newer_albums) < self.MIN_ITEMS_PER_STORAGE_TYPE:
+            #         storage_types.append(storage_type)
+            # # Update needed storage types
+            # if storage_types:
+            #     for storage_type in storage_types:
+            #         if self.__cancellable.is_cancelled():
+            #             raise Exception("cancelled")
+            #         self.__METHODS[storage_type](self, self.__cancellable)
+            #     self.clean_old_albums(storage_types)
+            #     App().artists.update_featuring()
         except Exception as e:
             Logger.warning("CollectionWebService::__populate_db(): %s", e)
         self.__is_running = False
-        Logger.info("Collection download finished")
+        Logger.info("Collection download finished (online plugins disabled)")
 
     def clean_old_albums(self, storage_types):
         """
