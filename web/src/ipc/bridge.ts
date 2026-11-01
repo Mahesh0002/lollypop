@@ -12,13 +12,29 @@ export type PayloadMap = {
   LIBRARY_LOADED: {
     albums: Album[]
     total: number
+    offset: number
+    limit: number
     truncated: boolean
+  }
+  ALBUM_LOADED: {
+    album: Album
+    tracks: Track[]
+  }
+  TRACKS_LOADED: {
+    tracks: Track[]
+    albumId: number
+  }
+  SEARCH_RESULTS: {
+    query: string
+    albums: Album[]
+    artists: Artist[]
+    tracks: Track[]
   }
   PLAYBACK_STATE: {
     playing: boolean
-    trackId?: number
-    position?: number
-    duration?: number
+    trackId: number
+    position: number
+    duration: number
   }
   ERROR: { message: string }
 }
@@ -29,8 +45,8 @@ export type MessageOf<T extends keyof PayloadMap> = {
 }
 
 export type Outbound =
-  | { type: 'GET_LIBRARY' }
-  | { type: 'NAVIGATE'; payload: { view: string; id?: number } }
+  | { type: 'GET_LIBRARY'; payload?: { offset?: number; limit?: number } }
+  | { type: 'NAVIGATE'; payload: { view: string; id?: number; query?: string } }
   | { type: 'PLAY'; payload: { trackId: number; queue?: number[] } }
   | { type: 'PAUSE' }
   | { type: 'SEEK'; payload: { position: number } }
@@ -43,6 +59,23 @@ export interface Album {
   year?: number | null
   duration?: number
   uri?: string
+  lp_album_id?: string
+  cover_path?: string | null
+}
+
+export interface Track {
+  id: number
+  name: string
+  artists: string[]
+  album?: string
+  duration: number
+  track_number?: number
+  disc_number?: number
+}
+
+export interface Artist {
+  id: number
+  name: string
 }
 
 type Handler<T extends keyof PayloadMap> = (

@@ -1,8 +1,13 @@
 import { create } from 'zustand'
 import * as bridge from '../ipc/bridge'
-import type { Album } from '../ipc/bridge'
+import type { Album, Track } from '../ipc/bridge'
 
-export type ViewId = 'listen-now' | 'albums' | 'artists' | 'playlists'
+export type ViewId =
+  | 'listen-now'
+  | 'albums'
+  | 'artists'
+  | 'playlists'
+  | 'album-detail'
 
 export type Playback = {
   playing: boolean
@@ -18,17 +23,25 @@ type LibraryState = {
   online: boolean
   albums: Album[]
   total: number
+  offset: number
+  limit: number
   truncated: boolean
   loading: boolean
   error: string | null
   query: string
   view: ViewId
+  /** Currently selected album for detail view */
+  selectedAlbum: Album | null
+  /** Tracks for the selected album */
+  albumTracks: Track[]
   playback: Playback
   /** Ask the host for the library (no-op when offline). */
-  load: () => void
+  load: (offset?: number, limit?: number) => void
+  loadMore: () => void
   setQuery: (q: string) => void
   setView: (v: ViewId) => void
-  playAlbum: (albumId: number) => void
+  selectAlbum: (album: Album | null) => void
+  playTrack: (trackId: number, queue?: number[]) => void
   togglePlay: () => void
   seek: (position: number) => void
 }
@@ -46,22 +59,31 @@ export const useLibrary = create<LibraryState>((set, get) => ({
   online: bridge.connected,
   albums: [],
   total: 0,
+  offset: 0,
+  limit: 100,
   truncated: false,
   loading: false,
   error: null,
   query: '',
   view: 'listen-now',
+  selectedAlbum: null,
+  albumTracks: [],
   playback: idle,
 
-  load: () => {
+  load: (offset = 0, limit = 100) => {
     if (!bridge.connected) {
-      // Running in a plain browser: nothing to ask, show the empty state.
       set({ loading: false, albums: [], total: 0 })
       return
     }
     if (get().loading) return
-    set({ loading: true, error: null })
-    bridge.send({ type: 'GET_LIBRARY' })
+    set({ loading: true, error: null, offset, limit })
+    bridge.send({ type: 'GET_LIBRARY', payload: { offset, limit } })
+  },
+
+  loadMore: () => {
+    const { albums, total, offset, limit, loading } = get()
+    if (loading || offset + albums.length >= total) return
+    get().load(offset + limit, limit)
   },
 
   setQuery: (query) => set({ query }),
@@ -71,20 +93,15 @@ export const useLibrary = create<LibraryState>((set, get) => ({
     bridge.send({ type: 'NAVIGATE', payload: { view } })
   },
 
-  playAlbum: (trackId) => {
-    const { albums } = get()
-    const queue = albums.map((a) => a.id)
+  selectAlbum: (album) => {
+    set({ selectedAlbum: album, albumTracks: [] })
+    if (album) {
+      bridge.send({ type: 'NAVIGATE', payload: { view: 'album', id: album.id } })
+    }
+  },
+
+  playTrack: (trackId, queue) => {
     bridge.send({ type: 'PLAY', payload: { trackId, queue } })
-    const album = albums.find((a) => a.id === trackId)
-    set({
-      playback: {
-        ...get().playback,
-        playing: true,
-        trackId,
-        title: album?.name ?? null,
-        artist: album?.artists[0] ?? null,
-      },
-    })
   },
 
   togglePlay: () => {
@@ -112,12 +129,32 @@ bridge.on('HOST_READY', () => {
 })
 
 bridge.on('LIBRARY_LOADED', (payload) => {
-  useLibrary.setState({
-    albums: payload.albums,
-    total: payload.total,
-    truncated: payload.truncated,
+  const { albums, total, offset, limit, truncated } = payload
+  useLibrary.setState((state) => ({
+    albums: offset === 0 ? albums : [...state.albums, ...albums],
+    total,
+    offset,
+    limit,
+    truncated,
     loading: false,
+  }))
+})
+
+bridge.on('ALBUM_LOADED', (payload) => {
+  useLibrary.setState({
+    selectedAlbum: payload.album,
+    albumTracks: payload.tracks,
+    view: 'album-detail',
   })
+})
+
+bridge.on('TRACKS_LOADED', (payload) => {
+  useLibrary.setState({ albumTracks: payload.tracks })
+})
+
+bridge.on('SEARCH_RESULTS', (payload) => {
+  // For now just log; search view can be added later
+  console.info('[search]', payload)
 })
 
 bridge.on('PLAYBACK_STATE', (payload) => {

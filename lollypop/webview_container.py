@@ -24,12 +24,17 @@ import gi
 gi.require_version("WebKit2", "4.1")
 from gi.repository import Gtk, Gdk, Gio, GLib, WebKit2
 
-from lollypop.define import App, StorageType
+from lollypop.objects_album import Album
+from lollypop.define import App, StorageType, ArtSize
+
+# Use real Album object for cover path lookup (has all needed attrs)
 from lollypop.web_ipc import WebIPC
 from lollypop.logger import Logger
 
 # Cap for the initial hydrate; Phase 2 adds pagination
 LIBRARY_LIMIT = 300
+# Default page size for paginated loads
+LIBRARY_PAGE_SIZE = 100
 
 # Override to point at a dev server or an alternate build.
 ENV_WEB_DIR = "LOLLYPOP_WEB_DIR"
@@ -119,6 +124,12 @@ class WebViewContainer(Gtk.Box):
         self.add(self.__webview)
         self.show_all()
         self.__ipc.on("GET_LIBRARY", self.__on_get_library)
+        self.__ipc.on("PLAY", self.__on_play)
+        self.__ipc.on("PAUSE", self.__on_pause)
+        self.__ipc.on("SEEK", self.__on_seek)
+        self.__ipc.on("NAVIGATE", self.__on_navigate)
+        # Connect to player signals for PLAYBACK_STATE updates
+        self.__connect_player_signals()
         self.__load()
 
     @property
@@ -180,12 +191,59 @@ class WebViewContainer(Gtk.Box):
         self.add(label)
         label.show()
 
+    def __connect_player_signals(self):
+        """Connect to player signals for PLAYBACK_STATE updates"""
+        try:
+            # Listen for track changes
+            App().player.connect("current-changed", self.__on_current_changed)
+            # Listen for play/pause
+            App().player.connect("notify::is-playing", self.__on_playing_changed)
+            # Listen for position updates (emitted periodically)
+            App().player.connect("notify::position", self.__on_position_changed)
+        except Exception as e:
+            Logger.warning("WebViewContainer: player signals unavailable: %s", e)
+
+    def __emit_playback_state(self):
+        """Emit current playback state to SPA"""
+        try:
+            track = App().player.current_track
+            if track and track.id:
+                self.__ipc.send({
+                    "type": "PLAYBACK_STATE",
+                    "payload": {
+                        "playing": App().player.is_playing,
+                        "trackId": track.id,
+                        "position": App().player.position / 1000.0,  # ms -> seconds
+                        "duration": track.duration,
+                    }
+                })
+        except Exception as e:
+            Logger.debug("WebViewContainer::__emit_playback_state(): %s", e)
+
+    def __on_current_changed(self, *args):
+        self.__emit_playback_state()
+
+    def __on_playing_changed(self, *args):
+        self.__emit_playback_state()
+
+    def __on_position_changed(self, *args):
+        # Throttle position updates to avoid flooding
+        self.__emit_playback_state()
+
     def __on_get_library(self, payload, message):
         """
             SPA asked for the library. Phase 0 stub: flat album list.
+            Supports pagination via payload: {offset, limit}
             @param payload as dict|None
             @param message as dict
         """
+        offset = 0
+        limit = LIBRARY_PAGE_SIZE
+        if payload and isinstance(payload, dict):
+            offset = int(payload.get("offset", 0) or 0)
+            limit = int(payload.get("limit", LIBRARY_PAGE_SIZE) or LIBRARY_PAGE_SIZE)
+            limit = min(limit, LIBRARY_LIMIT)
+
         try:
             album_ids = App().albums.get_ids([], [],
                                               StorageType.COLLECTION |
@@ -193,25 +251,190 @@ class WebViewContainer(Gtk.Box):
         except Exception as e:
             Logger.error("WebViewContainer::__on_get_library(): %s", e)
             album_ids = []
+
         albums = []
-        for album_id in album_ids[:LIBRARY_LIMIT]:
+        for album_id in album_ids[offset:offset + limit]:
             try:
+                lp_album_id = App().albums.get_lp_album_id(album_id)
+                # Get cover art path (cached, medium size)
+                cover_path = None
+                try:
+                    cover_path = App().album_art.get_cache_path(
+                        Album(album_id),
+                        ArtSize.MEDIUM,
+                        ArtSize.MEDIUM)
+                except Exception:
+                    pass
+
                 albums.append({
                     "id": album_id,
                     "name": App().albums.get_name(album_id),
                     "artists": App().albums.get_artists(album_id),
+                    "year": App().albums.get_year(album_id),
+                    "lp_album_id": lp_album_id,
+                    "cover_path": cover_path,
                 })
             except Exception:
                 continue
-        Logger.info("WebViewContainer::__on_get_library(): %d/%d albums",
-                    len(albums), len(album_ids))
+
+        Logger.info("WebViewContainer::__on_get_library(): %d/%d albums (offset=%d)",
+                    len(albums), len(album_ids), offset)
         self.__ipc.send({
             "type": "LIBRARY_LOADED",
             "payload": {
                 "albums": albums,
                 "total": len(album_ids),
-                "truncated": len(album_ids) > len(albums)
+                "offset": offset,
+                "limit": limit,
+                "truncated": len(album_ids) > offset + len(albums)
             }
+        })
+
+    # ----- Playback control (Phase 2) -----
+    def __on_play(self, payload, message):
+        """
+            SPA requests playback of a track/album
+            @param payload as dict: {trackId: int, queue?: int[]}
+        """
+        if not payload or "trackId" not in payload:
+            return
+        track_id = payload["trackId"]
+        queue = payload.get("queue", [])
+        try:
+            # Get the track object and play it
+            track = App().tracks.get_track(track_id)
+            if track and track.id:
+                # If queue provided, set up the playlist
+                if queue:
+                    albums = [App().albums.get_album_id(t) for t in queue]
+                    # TODO: properly set up album queue
+                    pass
+                App().player.load(track)
+        except Exception as e:
+            Logger.error("WebViewContainer::__on_play(): %s", e)
+
+    def __on_pause(self, payload, message):
+        """SPA requests pause"""
+        try:
+            App().player.pause()
+        except Exception as e:
+            Logger.error("WebViewContainer::__on_pause(): %s", e)
+
+    def __on_seek(self, payload, message):
+        """
+            SPA requests seek
+            @param payload as dict: {position: float} (seconds)
+        """
+        if not payload or "position" not in payload:
+            return
+        position = int(payload["position"] * 1000)  # convert to ms
+        try:
+            App().player.seek(position)
+        except Exception as e:
+            Logger.error("WebViewContainer::__on_seek(): %s", e)
+
+    def __on_navigate(self, payload, message):
+        """
+            SPA requests navigation
+            @param payload as dict: {view: str, id?: int}
+            Views: 'album', 'artist', 'playlist', 'tracks', 'search'
+        """
+        if not payload or "view" not in payload:
+            return
+        view = payload["view"]
+        target_id = payload.get("id")
+        try:
+            if view == "album" and target_id:
+                self.__load_album_detail(target_id)
+            elif view == "tracks" and target_id:
+                self.__load_album_tracks(target_id)
+            elif view == "search" and payload.get("query"):
+                self.__search(payload["query"])
+            # Other views can be added as needed
+        except Exception as e:
+            Logger.error("WebViewContainer::__on_navigate(): %s", e)
+
+    def __load_album_detail(self, album_id):
+        """Load album details and tracks for AlbumDetailPage"""
+        try:
+            album = Album(album_id)
+            if album.id is None:
+                return
+            # Get tracks for this album
+            track_ids = App().albums.get_disc_track_ids(album_id, [], [], True)
+            tracks = []
+            for tid in track_ids:
+                try:
+                    track = App().tracks.get_track(tid)
+                    if track and track.id:
+                        tracks.append({
+                            "id": track.id,
+                            "name": track.name,
+                            "artists": track.artists,
+                            "album": album.name,
+                            "duration": track.duration,
+                            "track_number": track.tracknumber,
+                            "disc_number": track.discnumber,
+                        })
+                except Exception:
+                    continue
+
+            lp_album_id = App().albums.get_lp_album_id(album_id)
+            cover_path = None
+            try:
+                cover_path = App().album_art.get_cache_path(
+                    Album(album_id), ArtSize.BIG, ArtSize.BIG)
+            except Exception:
+                pass
+
+            self.__ipc.send({
+                "type": "ALBUM_LOADED",
+                "payload": {
+                    "album": {
+                        "id": album_id,
+                        "name": album.name,
+                        "artists": album.artists,
+                        "year": album.year,
+                        "lp_album_id": lp_album_id,
+                        "cover_path": cover_path,
+                    },
+                    "tracks": tracks
+                }
+            })
+        except Exception as e:
+            Logger.error("WebViewContainer::__load_album_detail(): %s", e)
+
+    def __load_album_tracks(self, album_id):
+        """Load just tracks for an album (for TrackList view)"""
+        try:
+            track_ids = App().albums.get_disc_track_ids(album_id, [], [], True)
+            tracks = []
+            for tid in track_ids:
+                try:
+                    track = App().tracks.get_track(tid)
+                    if track:
+                        tracks.append({
+                            "id": track.id,
+                            "name": track.name,
+                            "artists": track.artists,
+                            "duration": track.duration,
+                            "track_number": track.tracknumber,
+                            "disc_number": track.discnumber,
+                        })
+                except Exception:
+                    continue
+            self.__ipc.send({
+                "type": "TRACKS_LOADED",
+                "payload": {"tracks": tracks, "albumId": album_id}
+            })
+        except Exception as e:
+            Logger.error("WebViewContainer::__load_album_tracks(): %s", e)
+
+    def __search(self, query):
+        """Search the library (stub for Phase 2)"""
+        self.__ipc.send({
+            "type": "SEARCH_RESULTS",
+            "payload": {"query": query, "albums": [], "artists": [], "tracks": []}
         })
 
     def __on_load_failed(self, webview, event, failing_uri, error, *ignore):

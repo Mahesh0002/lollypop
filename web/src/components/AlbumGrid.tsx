@@ -5,6 +5,7 @@ import { Artwork } from './Artwork'
 type Props = {
   albums: Album[]
   onPlay: (albumId: number) => void
+  onSelect?: (album: Album) => void
 }
 
 const stagger = {
@@ -19,7 +20,7 @@ const item = {
   show: { opacity: 1, y: 0, transition: { duration: 0.3, ease: EASE } },
 }
 
-export function AlbumGrid({ albums, onPlay }: Props) {
+export function AlbumGrid({ albums, onPlay, onSelect }: Props) {
   return (
     <motion.div
       className="grid"
@@ -33,7 +34,7 @@ export function AlbumGrid({ albums, onPlay }: Props) {
           type="button"
           className="card"
           variants={item}
-          onClick={() => onPlay(album.id)}
+          onClick={() => onSelect?.(album)}
         >
           <Artwork album={album} onPlay={onPlay} />
           <div className="card__title">{album.name}</div>
