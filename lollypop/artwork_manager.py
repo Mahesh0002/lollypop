@@ -124,20 +124,23 @@ class ArtworkManager(GObject.GObject):
             @param height as int
         """
         if data is None:
+            # Do not create empty file; remove any existing file instead
             f = Gio.File.new_for_path(store_path)
-            fstream = f.replace(None, False,
-                                Gio.FileCreateFlags.REPLACE_DESTINATION, None)
-            fstream.close()
-        else:
-            bytes = GLib.Bytes.new(data)
-            stream = Gio.MemoryInputStream.new_from_bytes(bytes)
-            pixbuf = GdkPixbuf.Pixbuf.new_from_stream(stream, None)
-            if width != -1 and height != -1:
-                pixbuf = pixbuf.scale_simple(width,
-                                             height,
-                                             GdkPixbuf.InterpType.BILINEAR)
-            stream.close()
-            self.save_pixbuf(pixbuf, store_path)
+            if f.query_exists():
+                try:
+                    f.delete(None)
+                except Exception:
+                    pass
+            return
+        bytes = GLib.Bytes.new(data)
+        stream = Gio.MemoryInputStream.new_from_bytes(bytes)
+        pixbuf = GdkPixbuf.Pixbuf.new_from_stream(stream, None)
+        if width != -1 and height != -1:
+            pixbuf = pixbuf.scale_simple(width,
+                                         height,
+                                         GdkPixbuf.InterpType.BILINEAR)
+        stream.close()
+        self.save_pixbuf(pixbuf, store_path)
 
     @property
     def extension(self):

@@ -231,6 +231,9 @@ class ListsContainer:
                 Logger.warning("Container: failed to send NAVIGATE: %s", e)
 
         # Still update the native UI for folded state etc.
+        # Ensure grid_view is a child of sub_widget (it may have been removed when webview was shown)
+        if self.grid_view.get_parent() != self.sub_widget:
+            self.sub_widget.add(self.grid_view)
         self.sub_widget.set_visible_child(self.grid_view)
         self.left_list.hide()
         self.left_list.clear()

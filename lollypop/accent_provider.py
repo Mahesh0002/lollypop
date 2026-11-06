@@ -35,11 +35,10 @@ try:
 except Exception:  # pragma: no cover - Pillow is a project dependency
     Image = None
 
-PREFIX = "[Lollypop Extension]"
+# Import design tokens
+from design_tokens import FALLBACK_ACCENT
 
-# Apple Music blue.  Used only when every local source is unavailable or
-# completely desaturated (for example a black-and-white wallpaper).
-FALLBACK_ACCENT = (10, 132, 255)
+PREFIX = "[Lollypop Extension]"
 
 WALLPAPER_PATH_FILE = os.path.expanduser(
     "~/.local/state/quickshell/user/generated/wallpaper/path.txt"

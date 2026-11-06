@@ -32,8 +32,16 @@ gi.require_version("GdkPixbuf", "2.0")
 
 from gi.repository import Gdk, GdkPixbuf, GLib, Gtk
 
+# Import design tokens
+from design_tokens import (
+    SPACING, RADIUS, TYPE, TEXT_OPACITY, TRACKING,
+    NEUTRAL, TEXT, ELEVATION, HAIRLINE, EASE, MOTION, SIZE,
+    FONT_STACK, MONO_STACK, FONT_FEATURE_TNUM, CSS_PRIORITY,
+    rgba, rgb, hex_color, _c8,
+)
+
 try:
-    from lollypop.accent_provider import FALLBACK_ACCENT
+    from accent_provider import FALLBACK_ACCENT
 except Exception:  # pragma: no cover - preview scripts can import standalone
     FALLBACK_ACCENT = (10, 132, 255)
 
@@ -42,7 +50,7 @@ except Exception:  # pragma: no cover - preview scripts can import standalone
 # track-reactive rules always win over the static neutral base on disk, so the
 # panel's scoped/dimmed text and the accent layer are never flattened by a
 # generic "label { color: #fff }" in the base file.
-_PRIORITY = Gtk.STYLE_PROVIDER_PRIORITY_USER + 1
+_PRIORITY = CSS_PRIORITY["extension-panel"]
 
 # Used when there is no artwork, so the panel is never unstyled/unreadable.
 NEUTRAL_PALETTE = ((34, 34, 44), (176, 156, 236), (126, 176, 226))
@@ -56,6 +64,672 @@ _ACC_L_MIN, _ACC_L_MAX, _ACC_S_MIN = 0.52, 0.76, 0.40
 
 def _c8(value):
     return max(0, min(255, int(round(value))))
+
+
+def _to_hls(color):
+    r, g, b = (c / 255 for c in color)
+    return colorsys.rgb_to_hls(r, g, b)
+
+
+def _from_hls(h, l, s):
+    return tuple(_c8(c * 255) for c in colorsys.hls_to_rgb(h, l, s))
+
+
+def _distance(a, b):
+    return sum((int(a[i]) - int(b[i])) ** 2 for i in range(3)) ** 0.5
+
+
+def _mix(a, b, t):
+    """Linear RGB blend: t=1 -> all a, t=0 -> all b (ColorUtils.mix semantics)."""
+    return tuple(_c8(t * a[i] + (1.0 - t) * b[i]) for i in range(3))
+
+
+def _adapt_to_accent(base, seed):
+    """Hue and saturation from the seed, lightness from the base colour.
+
+    Mirrors Quickshell's ColorUtils.adaptToAccent(base, seed), which is what
+    AdaptedMaterialScheme uses to bend the theme primary toward the artwork.
+    """
+    _bh, bl, _bs = _to_hls(base)
+    sh, _sl, ss = _to_hls(seed)
+    return _from_hls(sh, bl, ss)
+
+
+def _background(color):
+    """Keep hue, force a dark, not-neon background (light art would make
+    the white panel text unreadable)."""
+    h, l, s = _to_hls(color)
+    return _from_hls(h, min(max(l, _BG_L_MIN), _BG_L_MAX), min(s, _BG_S_MAX))
+
+
+def _accent(color):
+    """Keep hue, force a bright, visible accent. Greys stay grey."""
+    h, l, s = _to_hls(color)
+    l = min(max(l, _ACC_L_MIN), _ACC_L_MAX)
+    if s >= 0.12:
+        s = max(s, _ACC_S_MIN)
+    return _from_hls(h, l, s)
+
+
+def _hue_shift(color, delta):
+    h, l, s = _to_hls(color)
+    return _from_hls((h + delta) % 1.0, l, s)
+
+
+def _lighten(color, amount):
+    """Blend toward white by `amount` (0..1) — used for hover brightening."""
+    return _mix(color, (255, 255, 255), 1.0 - amount)
+
+
+# ---------------------------------------------------------------- extraction
+
+# Base colours the artwork seed is blended into, mirroring Quickshell's
+# Appearance.colors roles (a dark layer0 + a primary accent).
+_BASE_BG = (24, 24, 34)
+_BASE_ACCENT = (176, 156, 236)
+
+
+def _average_color(image_path):
+    """Average colour of the whole artwork, or None.
+
+    This is what Quickshell's ColorQuantizer with depth=0 returns: a single
+    colour computed by averaging the (downscaled) image's pixels.  Safe to
+    call from a worker thread (GdkPixbuf file loads do not touch GTK state).
+    """
+    if not image_path or not os.path.isfile(image_path):
+        return None
+    try:
+        pixbuf = GdkPixbuf.Pixbuf.new_from_file(image_path)
+    except Exception as exc:
+        print(f"[Lollypop Extension] Color extraction failed: {exc}")
+        return None
+
+    try:
+        # Downscale first: the average is stable and it keeps the pixel walk
+        # cheap.  64px matches Quickshell's recommended rescaleSize.
+        small = pixbuf.scale_simple(64, 64, GdkPixbuf.InterpType.BILINEAR)
+        channels = small.get_n_channels()
+        stride = small.get_rowstride()
+        pixels = small.get_pixels()
+        tr = tg = tb = count = 0
+        for y in range(64):
+            row = y * stride
+            for x in range(64):
+                i = row + x * channels
+                if channels == 4 and pixels[i + 3] == 0:
+                    continue  # transparent pixel, same as ColorQuantizer
+                tr += pixels[i]
+                tg += pixels[i + 1]
+                tb += pixels[i + 2]
+                count += 1
+        if count == 0:
+            return None
+        return (tr / count, tg / count, tb / count)
+    except Exception:
+        return None
+    finally:
+        try:
+            small = None  # release the scaled pixbuf promptly
+        except Exception:
+            pass
+
+
+def derive_scheme(seed):
+    """Turn the single artwork seed into a (background, accent1, accent2).
+
+    Mirrors AdaptedMaterialScheme: the seed is blended ~50% into each base
+    role, so every colour tracks the album art coherently rather than being
+    three independently-picked swatches.
+    """
+    if seed is None:
+        return NEUTRAL_PALETTE
+
+    # Background: dark base tinted by the seed, forced dark so light text
+    # stays readable (light artwork would otherwise wash the panel out).
+    background = _background(_mix(_BASE_BG, seed, 0.5))
+
+    # Accent 1: seed hue + saturation at the base accent's lightness, then
+    # blended back toward the seed (adaptToAccent + mix, as in colPrimary).
+    adapted = _adapt_to_accent(_BASE_ACCENT, seed)
+    accent1 = _accent(_mix(adapted, seed, 0.5))
+
+    # Accent 2: a hue-shifted companion for selection highlights, kept
+    # distinct from accent1 so selected rows remain legible.
+    accent2 = _accent(_hue_shift(_mix(adapted, seed, 0.5), 0.08))
+    if _distance(accent2, accent1) < 40:
+        accent2 = _hue_shift(accent1, 0.12)
+
+    return background, accent1, accent2
+
+
+def extract_palette(image_path):
+    """Return (background, accent1, accent2) as RGB tuples, or None.
+
+    Quickshell-style: average the artwork down to one seed colour, then mix
+    that seed into fixed base roles (AdaptedMaterialScheme) so the whole
+    panel tracks the art.  Safe to call from a worker thread.
+    """
+    seed = _average_color(image_path)
+    if seed is None:
+        return None
+    return derive_scheme(seed)
+
+
+# ---------------------------------------------------------------- CSS
+
+def _rgb(color):
+    return "rgb({}, {}, {})".format(*(_c8(v) for v in color))
+
+
+def _rgba(color, alpha):
+    return "rgba({}, {}, {}, {:.3f})".format(
+        *(_c8(v) for v in color), alpha)
+
+
+def generate_panel_css(primary, accent1, accent2):
+    """GTK 3 CSS for the right panel and the full-page Songs browser."""
+    p, a1, a2 = map(_rgb, (primary, accent1, accent2))
+    a1_hover = _rgb(_lighten(accent1, 0.14))
+    a1_soft = _rgba(accent1, 0.34)
+    a1_wash = _rgba(accent1, 0.22)
+    a1_faint = _rgba(accent1, 0.10)
+    a1_glow = _rgba(accent1, 0.30)
+    a2_soft = _rgba(accent2, 0.28)
+
+    # Design token values
+    sp_1 = SPACING["1"]
+    sp_2 = SPACING["2"]
+    sp_3 = SPACING["3"]
+    sp_4 = SPACING["4"]
+    sp_5 = SPACING["5"]
+    sp_6 = SPACING["6"]
+    radius_sm = RADIUS["sm"]
+    radius_md = RADIUS["md"]
+    radius_lg = RADIUS["lg"]
+    radius_xl = RADIUS["xl"]
+    radius_pill = RADIUS["pill"]
+    elevation_1 = ELEVATION["1"]
+    elevation_2 = ELEVATION["2"]
+    elevation_3 = ELEVATION["3"]
+    ease_normal = EASE["normal"]
+    ease_slow = EASE["slow"]
+    text_primary = hex_color(TEXT["primary"])
+    text_secondary = hex_color(TEXT["secondary"])
+    text_muted = rgba(TEXT["secondary"], TEXT_OPACITY["muted"])
+    text_subtle = rgba(TEXT["secondary"], TEXT_OPACITY["subtle"])
+    text_disabled = rgba(TEXT["secondary"], TEXT_OPACITY["disabled"])
+    text_inverse = hex_color(TEXT["inverse"])
+    font_body = TYPE["body"]
+    font_body_sm = TYPE["body-sm"]
+    font_subhead = TYPE["subhead"]
+    font_title_sm = TYPE["title-sm"]
+    font_caption = TYPE["caption"]
+    tracking_wider = TRACKING["wider"]
+    tracking_wide = TRACKING["wide"]
+    btn_sm = SIZE["btn-sm"]
+    btn_md = SIZE["btn-md"]
+    btn_lg = SIZE["btn-lg"]
+    btn_transport = SIZE["btn-transport"]
+    btn_play = SIZE["btn-play"]
+    slider_track = SIZE["slider-track"]
+    slider_thumb = SIZE["slider-thumb"]
+
+    return f"""
+#right-panel {{
+    color: {text_primary};
+    background-color: {p};
+    transition: background-color {MOTION["accent-shift"]};
+}}
+
+#right-panel #right-panel-header,
+#right-panel #right-panel-lyrics-container,
+#right-panel #right-panel-queue-container {{
+    color: {text_primary};
+    background-color: rgba(10, 10, 16, 0.52);
+    border-radius: {radius_lg}px;
+    padding: {sp_2}px;
+}}
+
+/* Metadata has no card background; it sits directly on the panel while
+   keeping the same 8px inset as every other section.  No extra padding: the
+   8px section gap alone sets the vertical rhythm above/below. */
+#right-panel #right-panel-track-info {{
+    color: {text_primary};
+    background-color: transparent;
+    background-image: none;
+    border-radius: 0;
+    padding: 0;
+}}
+
+/* Three-step hierarchy: title is the bright focal point, artist sits a step
+   below it, album recedes into a quieter grey. */
+#right-panel #right-panel-title {{
+    color: {text_primary};
+    font-size: {font_title_sm.size}px;
+    font-weight: {font_title_sm.weight};
+}}
+
+#right-panel #right-panel-media {{
+    background-color: rgba(10, 10, 16, 0.58);
+    border-radius: {radius_lg}px;
+}}
+
+/* Material 3 progress bar: transparent box, compact tabular time labels. */
+#right-panel #right-panel-progress {{
+    background-color: transparent;
+}}
+
+#right-panel #right-panel-progress-time {{
+    color: {rgba(TEXT["primary"], 0.62)};
+    font-size: {font_caption.size}px;
+    font-feature-settings: {FONT_FEATURE_TNUM};
+}}
+
+#right-panel #right-panel-artist {{
+    color: {rgba(TEXT["primary"], 0.80)};
+    font-size: {font_body.size}px;
+}}
+
+#right-panel #right-panel-album {{
+    color: {rgba(TEXT["primary"], 0.52)};
+    font-size: {font_body_sm.size}px;
+}}
+
+#right-panel #right-panel-heading {{
+    color: {a1};
+    font-size: {font_caption.size}px;
+    font-weight: 700;
+}}
+
+#right-panel #right-panel-artwork-frame {{
+    background-color: rgba(0, 0, 0, 0.16);
+    border-radius: {radius_lg}px;
+}}
+
+#right-panel #right-panel-lyrics {{
+    color: {rgba(TEXT["primary"], 0.92)};
+    font-size: {font_subhead.size}px;
+}}
+
+/* Synced lyrics: one row per line.  Inactive lines sit back in the dim
+   range; the active line jumps to a bright, larger weight and the sung
+   portion is painted by the Cairo/Pango overlay. */
+#right-panel #right-panel-lyrics-container .lyrics-row {{
+    background-color: transparent;
+    border-radius: {RADIUS["sm"]}px;
+}}
+
+#right-panel #right-panel-lyrics-container .lyrics-row.hover {{
+    background-color: {rgba(NEUTRAL["border"], 0.07)};
+}}
+
+#right-panel #right-panel-lyrics-container .lyrics-line {{
+    color: {rgba(TEXT["primary"], 0.38)};
+    font-size: {font_subhead.size}px;
+    padding: {SPACING["1"]}px 0;
+}}
+
+#right-panel #right-panel-lyrics-container .lyrics-line.past {{
+    color: {rgba(TEXT["primary"], 0.55)}.
+}}
+
+#right-panel #right-panel-lyrics-container .lyrics-line.active {{
+    color: {text_primary};
+    font-size: {TYPE["title"].size}px;
+    font-weight: 700;
+    padding: {SPACING["2"]}px 0;
+}}
+
+#right-panel #right-panel-lyrics-container .lyrics-dots {{
+    color: {rgba(TEXT["primary"], 0.45)}.
+    font-size: 16px.
+    padding: {SPACING["2"]}px 0.
+}}
+
+#right-panel scrolledwindow,
+#right-panel viewport {{
+    background-color: transparent;
+}}
+
+#right-panel button {{
+    color: {text_primary};
+    background-image: none;
+    background-color: rgba(18, 18, 26, 0.65);
+    border: 1px solid {rgba(NEUTRAL["border"], 0.16)};
+    border-radius: {RADIUS["sm"]}px;
+    box-shadow: none;
+}}
+
+#right-panel button:hover {{
+    background-color: {rgba(NEUTRAL["border"], 0.16)};
+    border-color: {a1};
+}}
+
+#right-panel #right-panel-queue-container list,
+#right-panel #right-panel-queue-container row {{
+    background-color: transparent;
+}}
+
+#right-panel #right-panel-queue-container row:hover {{
+    background-color: {rgba(NEUTRAL["border"], 0.08)};
+}}
+
+/* NOTE: row-scoped on purpose — a bare `label` selector would out-rank the
+   heading rule above and flatten the accent-coloured section headings. */
+#right-panel #right-panel-queue-container row label {{
+    color: #f5f5f8;
+}}
+
+#right-panel #right-panel-queue-container row:selected,
+#right-panel #right-panel-queue-container row:active {{
+    background-color: {a2};
+}}
+
+/* Custom Up Next list.  Rows are compact so the panel can show a useful
+   preview of the queue plus the current playback context. */
+#right-panel #up-next-list {{
+    background-color: transparent;
+}}
+
+#right-panel #right-panel-queue-container row.up-next-row {{
+    background-color: transparent;
+    border-radius: {RADIUS["sm"]}px;
+    padding: 0;
+    min-height: 0;
+}}
+
+#right-panel #right-panel-queue-container row.up-next-row:hover {{
+    background-color: {rgba(NEUTRAL["border"], 0.08)}.
+}}
+
+#right-panel #right-panel-queue-container label.up-next-number {{
+    color: {rgba(TEXT["primary"], 0.38)}.
+    font-size: {font_caption.size}px.
+}}
+
+#right-panel #right-panel-queue-container row.queued label.up-next-number {{
+    color: {a1}.
+}}
+
+#right-panel #right-panel-queue-container label.up-next-title {{
+    color: {text_primary}.
+    font-size: {font_body.size}px.
+    font-weight: 600.
+}}
+
+#right-panel #right-panel-queue-container label.up-next-artist {{
+    color: {rgba(TEXT["primary"], 0.55)}.
+    font-size: {font_caption.size}px.
+}}
+
+#right-panel #right-panel-queue-container label.up-next-duration {{
+    color: {rgba(TEXT["primary"], 0.42)}.
+    font-size: {font_caption.size}px.
+    font-feature-settings: {FONT_FEATURE_TNUM}.
+}}
+
+#right-panel #right-panel-queue-container label.up-next-badge {{
+    color: {a1}.
+    font-size: 9px.
+    font-weight: bold.
+}}
+
+#right-panel #right-panel-queue-container label.up-next-empty {{
+    color: {rgba(TEXT["primary"], 0.42)}.
+    font-size: {font_body.size}px.
+}}
+
+#right-panel #right-panel-queue-container button.up-next-remove {{
+    color: {rgba(TEXT["primary"], 0.45)}.
+    background-color: transparent.
+    background-image: none.
+    border: none.
+    box-shadow: none.
+    padding: 0.
+    min-width: 18px.
+    min-height: 18px.
+    border-radius: {RADIUS["xs"]}px.
+}}
+
+#right-panel #right-panel-queue-container button.up-next-remove:hover {{
+    color: {text_primary}.
+    background-color: {rgba(NEUTRAL["border"], 0.12)}.
+}}
+
+/* Full-page Songs browser, shown in Lollypop's main stack below the
+   sidebar "Songs" row.  A tinted hero introduces the library and its
+   controls; the track list below stays quiet and scannable. */
+#songs-page {{
+    background-color: transparent.
+}}
+
+#songs-page #songs-page-hero {{
+    background-image: linear-gradient(
+        135deg, {a1_soft} 0%, {a1_faint} 58%, rgba(255, 255, 255, 0.025) 100%).
+    border: 1px solid {rgba(NEUTRAL["border"], 0.09)}.
+    border-radius: {RADIUS["xl"]}px.
+    box-shadow: {elevation_3}.
+    padding: {SPACING["5"]}px {SPACING["5"]}px.
+}}
+
+#songs-page #songs-page-cover {{
+    background-color: rgba(0, 0, 0, 0.24).
+    border: 1px solid {rgba(NEUTRAL["border"], 0.14)}.
+    border-radius: 19px.
+    padding: 2px.
+    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.34).
+}}
+
+#songs-page #songs-page-cover.no-art {{
+    background-image: linear-gradient(135deg, {a1_wash}, {a2_soft}).
+}}
+
+#songs-page #songs-page-cover image {{
+    color: {rgba(TEXT["primary"], 0.82)}.
+}}
+
+#songs-page label.songs-page-eyebrow {{
+    color: {a1}.
+    font-size: {font_caption.size}px.
+    font-weight: 700.
+    letter-spacing: {TRACKING["wider"]}.
+}}
+
+#songs-page label.songs-page-title {{
+    color: {text_primary}.
+    font-size: {TYPE["headline"].size}px.
+    font-weight: {TYPE["headline"].weight}.
+}}
+
+#songs-page label.songs-page-count {{
+    color: {rgba(TEXT["primary"], 0.64)}.
+    font-size: {font_body.size}px.
+    font-weight: 500.
+}}
+
+/* Page-level playback controls: a compact Spotify/Apple Music-style row
+   under the title.  The primary action is the only accent-filled pill;
+   shuffle/repeat light up while active. */
+#songs-page #songs-page-actions {{
+    background-color: transparent.
+}}
+
+#songs-page button.songs-page-control {{
+    color: {text_primary}.
+    background-color: {rgba(NEUTRAL["border"], 0.07)}.
+    background-image: none.
+    border: 1px solid {rgba(NEUTRAL["border"], 0.06)}.
+    border-radius: {RADIUS["pill"]}px.
+    box-shadow: none.
+    min-height: {SIZE["btn-transport"]}px.
+    padding: 0 {SPACING["4"]}px.
+    transition: background-color {EASE["normal"]}, border-color {EASE["normal"]}.
+}}
+
+#songs-page button.songs-page-control:hover {{
+    background-color: {rgba(NEUTRAL["border"], 0.14)}.
+    border-color: {rgba(NEUTRAL["border"], 0.12)}.
+}}
+
+#songs-page button.songs-page-control:checked,
+#songs-page button.songs-page-control.active {{
+    background-color: {a1}.
+    background-image: linear-gradient(135deg, {a1}, {a1_hover}).
+    border-color: {rgba(NEUTRAL["border"], 0.14)}.
+    color: {text_inverse}.
+    box-shadow: 0 4px 14px {a1_glow}.
+}}
+
+#songs-page button.songs-page-control:checked:hover,
+#songs-page button.songs-page-control.active:hover {{
+    background-color: {a1_hover}.
+    background-image: linear-gradient(135deg, {a1_hover}, {a1}).
+}}
+
+#songs-page button.songs-page-play {{
+    background-color: {a1}.
+    background-image: linear-gradient(135deg, {a1}, {a1_hover}).
+    border-color: {rgba(NEUTRAL["border"], 0.14)}.
+    min-height: {SIZE["btn-play"]}px.
+    padding: 0 {SPACING["5"]}px.
+    border-radius: {RADIUS["pill"]}px.
+    box-shadow: 0 8px 22px {a1_glow}.
+    font-weight: 700.
+}}
+
+#songs-page button.songs-page-play:hover {{
+    background-color: {a1_hover}.
+    background-image: linear-gradient(135deg, {a1_hover}, {a1}).
+}}
+
+#songs-page button.songs-page-play label {{
+    color: {text_inverse}.
+    font-size: {font_subhead.size}px.
+    font-weight: 700.
+}}
+
+#songs-page button.songs-page-transport {{
+    color: {rgba(TEXT["primary"], 0.82)}.
+    background-color: {rgba(NEUTRAL["border"], 0.06)}.
+    background-image: none.
+    border: 1px solid {rgba(NEUTRAL["border"], 0.05)}.
+    box-shadow: none.
+    min-width: {SIZE["btn-transport"]}px.
+    min-height: {SIZE["btn-transport"]}px.
+    padding: 0.
+    border-radius: {RADIUS["pill"]}px.
+}}
+
+#songs-page button.songs-page-transport:hover {{
+    color: {text_primary}.
+    background-color: {rgba(NEUTRAL["border"], 0.14)}.
+    border-color: {rgba(NEUTRAL["border"], 0.12)}.
+}}
+
+#songs-page separator.songs-page-action-divider {{
+    background-color: {rgba(NEUTRAL["border"], 0.10)}.
+    min-width: 1px.
+    margin-top: {SPACING["2"]}px.
+    margin-bottom: {SPACING["2"]}px.
+}}
+
+#songs-page label.songs-page-control-label {{
+    color: inherit.
+    font-size: {font_body_sm.size}px.
+    font-weight: 600.
+}}
+
+#songs-page #songs-page-column-head {{
+    padding-bottom: {SPACING["2"]}px.
+    border-bottom: 1px solid {rgba(NEUTRAL["border"], 0.07)}.
+}}
+
+#songs-page label.songs-page-column-label {{
+    color: {rgba(TEXT["primary"], 0.34)}.
+    font-size: {font_caption.size}px.
+    font-weight: 700.
+    letter-spacing: {TRACKING["wide"]}.
+}}
+
+#songs-page #songs-page-scroller {{
+    background-color: transparent.
+}}
+
+#songs-page #songs-page-list {{
+    background-color: transparent.
+    margin: {SPACING["1"]}px {SPACING["6"]}px {SPACING["6"]}px {SPACING["6"]}px.
+}}
+
+#songs-page row.song-row {{
+    background-color: transparent.
+    border-radius: {RADIUS["sm"]}px.
+    padding: 0.
+    min-height: {SIZE["row-comfortable"]}px.
+}}
+
+#songs-page row.song-row:hover {{
+    background-color: {rgba(NEUTRAL["border"], 0.065)}.
+}}
+
+#songs-page row.song-row.playing {{
+    background-image: linear-gradient(
+        90deg, {a1_wash} 0%, {a1_faint} 62%, transparent 100%).
+    box-shadow: inset 3px 0 0 {a1}.
+}}
+
+#songs-page row.song-row.playing label.song-number,
+#songs-page row.song-row.playing label.song-title {{
+    color: {a1}.
+}}
+
+#songs-page row.song-row:selected,
+#songs-page row.song-row:active {{
+    background-color: {a1_faint}.
+}}
+
+#songs-page #songs-page-list box.song-art-frame {{
+    background-color: {rgba(NEUTRAL["border"], 0.045)}.
+    border-radius: {RADIUS["sm"]}px.
+}}
+
+#songs-page #songs-page-list image.song-art-placeholder {{
+    color: {rgba(TEXT["primary"], 0.26)}.
+}}
+
+#songs-page label.song-number {{
+    color: {rgba(TEXT["primary"], 0.32)}.
+    font-size: {font_caption.size}px.
+    font-weight: 600.
+    font-feature-settings: {FONT_FEATURE_TNUM}.
+}}
+
+#songs-page label.song-title {{
+    color: {text_primary}.
+    font-size: {font_subhead.size}px.
+    font-weight: 600.
+}}
+
+#songs-page label.song-artist {{
+    color: {rgba(TEXT["primary"], 0.55)}.
+    font-size: {font_body_sm.size}px.
+}}
+
+#songs-page label.song-album {{
+    color: {rgba(TEXT["primary"], 0.40)}.
+    font-size: {font_body_sm.size}px.
+}}
+
+#songs-page label.song-duration {{
+    color: {rgba(TEXT["primary"], 0.38)}.
+    font-size: {font_body_sm.size}px.
+    font-feature-settings: {FONT_FEATURE_TNUM}.
+}}
+
+#songs-page label.song-empty {{
+    color: {rgba(TEXT["primary"], 0.42)}.
+    font-size: {font_body.size}px.
+}}
+"""
 
 
 def _to_hls(color):
@@ -825,6 +1499,59 @@ def generate_page_css(accent):
     a1_wash = _rgba(accent, 0.18)
     a1_faint = _rgba(accent, 0.08)
     a1_glow = _rgba(accent, 0.28)
+    
+    # Design token values
+    text_primary = hex_color(TEXT["primary"])
+    text_secondary = hex_color(TEXT["secondary"])
+    text_inverse = hex_color(TEXT["inverse"])
+    text_muted = rgba(TEXT["secondary"], TEXT_OPACITY["muted"])
+    tracking_wider = TRACKING["wider"]
+    tracking_wide = TRACKING["wide"]
+    font_caption = TYPE["caption"]
+    font_body = TYPE["body"]
+    font_body_sm = TYPE["body-sm"]
+    font_subhead = TYPE["subhead"]
+    font_headline = TYPE["headline"]
+    tracking_wider = TRACKING["wider"]
+    tracking_wide = TRACKING["wide"]
+    btn_transport = SIZE["btn-transport"]
+    btn_play = SIZE["btn-play"]
+    radius_pill = RADIUS["pill"]
+    radius_xl = RADIUS["xl"]
+    elevation_3 = ELEVATION["3"]
+    tracking_wider = TRACKING["wider"]
+    tracking_wide = TRACKING["wide"]
+    font_caption = TYPE["caption"]
+    font_body = TYPE["body"]
+    font_body_sm = TYPE["body-sm"]
+    font_subhead = TYPE["subhead"]
+    font_headline = TYPE["headline"]
+    tracking_wider = TRACKING["wider"]
+    tracking_wide = TRACKING["wide"]
+    btn_transport = SIZE["btn-transport"]
+    btn_play = SIZE["btn-play"]
+    radius_pill = RADIUS["pill"]
+    radius_xl = RADIUS["xl"]
+    elevation_3 = ELEVATION["3"]
+    tracking_wider = TRACKING["wider"]
+    tracking_wide = TRACKING["wide"]
+    font_caption = TYPE["caption"]
+    font_body = TYPE["body"]
+    font_body_sm = TYPE["body-sm"]
+    font_subhead = TYPE["subhead"]
+    font_headline = TYPE["headline"]
+    btn_transport = SIZE["btn-transport"]
+    btn_play = SIZE["btn-play"]
+    radius_pill = RADIUS["pill"]
+    radius_xl = RADIUS["xl"]
+    elevation_3 = ELEVATION["3"]
+    tracking_wider = TRACKING["wider"]
+    tracking_wide = TRACKING["wide"]
+    font_caption = TYPE["caption"]
+    font_body = TYPE["body"]
+    font_body_sm = TYPE["body-sm"]
+    font_subhead = TYPE["subhead"]
+    font_headline = TYPE["headline"]
 
     return f"""
 #songs-page #songs-page-hero {{
@@ -845,8 +1572,8 @@ def generate_page_css(accent):
 #songs-page button.songs-page-control:checked {{
     background-color: {a1};
     background-image: linear-gradient(135deg, {a1}, {a1_hover});
-    border-color: rgba(255, 255, 255, 0.14);
-    color: #ffffff;
+    border-color: {rgba(NEUTRAL["border"], 0.14)};
+    color: {text_inverse};
     box-shadow: 0 4px 14px {a1_glow};
 }}
 
@@ -859,7 +1586,7 @@ def generate_page_css(accent):
 #songs-page button.songs-page-play {{
     background-color: {a1};
     background-image: linear-gradient(135deg, {a1}, {a1_hover});
-    border-color: rgba(255, 255, 255, 0.14);
+    border-color: {rgba(NEUTRAL["border"], 0.14)};
     box-shadow: 0 8px 22px {a1_glow};
 }}
 

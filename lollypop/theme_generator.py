@@ -20,13 +20,18 @@ Output:
 
 from pathlib import Path
 
+# Import design tokens
+from design_tokens import (
+    SPACING, RADIUS, TYPE, TEXT_OPACITY, TRACKING,
+    NEUTRAL, TEXT, ELEVATION, HAIRLINE, EASE, MOTION, SIZE,
+    FONT_STACK, MONO_STACK, FONT_FEATURE_TNUM, CSS_PRIORITY,
+    rgba, rgb, hex_color, _c8,
+)
+
 # Marks the generated static base so scripts/doctor.py can distinguish a
 # healthy generated theme from a stale/hand-written file.  Accent rules are
 # deliberately not written to disk.
 BASE_MARKER = "/* --- LOLLYPOP EXTENSION STATIC BASE (generated) --- */"
-
-_EASE = "160ms ease-in-out"
-_EASE_SLOW = "280ms ease-in-out"
 
 
 def generate_global_base_css() -> str:

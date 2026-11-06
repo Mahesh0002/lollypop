@@ -59,6 +59,11 @@ install_subdir(
   install_dir: python_dir
 )
 
+install_subdir(
+  'backend',
+  install_dir: python_dir
+)
+
 #install_subdir(
 #  'thirdparty',
 #  install_dir: join_paths(python_dir, 'lollypop')
