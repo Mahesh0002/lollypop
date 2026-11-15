@@ -79,7 +79,10 @@ try:
     if _extension_dir not in _lollypop_ext_sys.path:
         _lollypop_ext_sys.path.append(_extension_dir)
 
-    from widget_injector import SimpleVisualizer
+    try:
+        from lollypop.widget_injector import SimpleVisualizer
+    except ImportError:
+        from widget_injector import SimpleVisualizer
     from lollypop.define import App
 
     # Only inject once per fullscreen window.

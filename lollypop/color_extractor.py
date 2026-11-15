@@ -392,7 +392,7 @@ def generate_panel_css(primary, accent1, accent2):
 }}
 
 #right-panel #right-panel-lyrics-container .lyrics-line.past {{
-    color: {rgba(TEXT["primary"], 0.55)}.
+    color: {rgba(TEXT["primary"], 0.55)};
 }}
 
 #right-panel #right-panel-lyrics-container .lyrics-line.active {{
@@ -403,9 +403,9 @@ def generate_panel_css(primary, accent1, accent2):
 }}
 
 #right-panel #right-panel-lyrics-container .lyrics-dots {{
-    color: {rgba(TEXT["primary"], 0.45)}.
-    font-size: 16px.
-    padding: {SPACING["2"]}px 0.
+    color: {rgba(TEXT["primary"], 0.45)};
+    font-size: 16px;
+    padding: {SPACING["2"]}px 0;
 }}
 
 #right-panel scrolledwindow,
@@ -461,295 +461,295 @@ def generate_panel_css(primary, accent1, accent2):
 }}
 
 #right-panel #right-panel-queue-container row.up-next-row:hover {{
-    background-color: {rgba(NEUTRAL["border"], 0.08)}.
+    background-color: {rgba(NEUTRAL["border"], 0.08)};
 }}
 
 #right-panel #right-panel-queue-container label.up-next-number {{
-    color: {rgba(TEXT["primary"], 0.38)}.
-    font-size: {font_caption.size}px.
+    color: {rgba(TEXT["primary"], 0.38)};
+    font-size: {font_caption.size}px;
 }}
 
 #right-panel #right-panel-queue-container row.queued label.up-next-number {{
-    color: {a1}.
+    color: {a1};
 }}
 
 #right-panel #right-panel-queue-container label.up-next-title {{
-    color: {text_primary}.
-    font-size: {font_body.size}px.
-    font-weight: 600.
+    color: {text_primary};
+    font-size: {font_body.size}px;
+    font-weight: 600;
 }}
 
 #right-panel #right-panel-queue-container label.up-next-artist {{
-    color: {rgba(TEXT["primary"], 0.55)}.
-    font-size: {font_caption.size}px.
+    color: {rgba(TEXT["primary"], 0.55)};
+    font-size: {font_caption.size}px;
 }}
 
 #right-panel #right-panel-queue-container label.up-next-duration {{
-    color: {rgba(TEXT["primary"], 0.42)}.
-    font-size: {font_caption.size}px.
-    font-feature-settings: {FONT_FEATURE_TNUM}.
+    color: {rgba(TEXT["primary"], 0.42)};
+    font-size: {font_caption.size}px;
+    font-feature-settings: {FONT_FEATURE_TNUM};
 }}
 
 #right-panel #right-panel-queue-container label.up-next-badge {{
-    color: {a1}.
-    font-size: 9px.
-    font-weight: bold.
+    color: {a1};
+    font-size: 9px;
+    font-weight: bold;
 }}
 
 #right-panel #right-panel-queue-container label.up-next-empty {{
-    color: {rgba(TEXT["primary"], 0.42)}.
-    font-size: {font_body.size}px.
+    color: {rgba(TEXT["primary"], 0.42)};
+    font-size: {font_body.size}px;
 }}
 
 #right-panel #right-panel-queue-container button.up-next-remove {{
-    color: {rgba(TEXT["primary"], 0.45)}.
-    background-color: transparent.
-    background-image: none.
-    border: none.
-    box-shadow: none.
-    padding: 0.
-    min-width: 18px.
-    min-height: 18px.
-    border-radius: {RADIUS["xs"]}px.
+    color: {rgba(TEXT["primary"], 0.45)};
+    background-color: transparent;
+    background-image: none;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+    min-width: 18px;
+    min-height: 18px;
+    border-radius: {RADIUS["xs"]}px;
 }}
 
 #right-panel #right-panel-queue-container button.up-next-remove:hover {{
-    color: {text_primary}.
-    background-color: {rgba(NEUTRAL["border"], 0.12)}.
+    color: {text_primary};
+    background-color: {rgba(NEUTRAL["border"], 0.12)};
 }}
 
 /* Full-page Songs browser, shown in Lollypop's main stack below the
    sidebar "Songs" row.  A tinted hero introduces the library and its
    controls; the track list below stays quiet and scannable. */
 #songs-page {{
-    background-color: transparent.
+    background-color: transparent;
 }}
 
 #songs-page #songs-page-hero {{
     background-image: linear-gradient(
-        135deg, {a1_soft} 0%, {a1_faint} 58%, rgba(255, 255, 255, 0.025) 100%).
-    border: 1px solid {rgba(NEUTRAL["border"], 0.09)}.
-    border-radius: {RADIUS["xl"]}px.
-    box-shadow: {elevation_3}.
-    padding: {SPACING["5"]}px {SPACING["5"]}px.
+        135deg, {a1_soft} 0%, {a1_faint} 58%, rgba(255, 255, 255, 0.025) 100%);
+    border: 1px solid {rgba(NEUTRAL["border"], 0.09)};
+    border-radius: {RADIUS["xl"]}px;
+    box-shadow: {elevation_3};
+    padding: {SPACING["5"]}px {SPACING["5"]}px;
 }}
 
 #songs-page #songs-page-cover {{
-    background-color: rgba(0, 0, 0, 0.24).
-    border: 1px solid {rgba(NEUTRAL["border"], 0.14)}.
-    border-radius: 19px.
-    padding: 2px.
-    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.34).
+    background-color: rgba(0, 0, 0, 0.24);
+    border: 1px solid {rgba(NEUTRAL["border"], 0.14)};
+    border-radius: 19px;
+    padding: 2px;
+    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.34);
 }}
 
 #songs-page #songs-page-cover.no-art {{
-    background-image: linear-gradient(135deg, {a1_wash}, {a2_soft}).
+    background-image: linear-gradient(135deg, {a1_wash}, {a2_soft});
 }}
 
 #songs-page #songs-page-cover image {{
-    color: {rgba(TEXT["primary"], 0.82)}.
+    color: {rgba(TEXT["primary"], 0.82)};
 }}
 
 #songs-page label.songs-page-eyebrow {{
-    color: {a1}.
-    font-size: {font_caption.size}px.
-    font-weight: 700.
-    letter-spacing: {TRACKING["wider"]}.
+    color: {a1};
+    font-size: {font_caption.size}px;
+    font-weight: 700;
+    letter-spacing: {TRACKING["wider"]};
 }}
 
 #songs-page label.songs-page-title {{
-    color: {text_primary}.
-    font-size: {TYPE["headline"].size}px.
-    font-weight: {TYPE["headline"].weight}.
+    color: {text_primary};
+    font-size: {TYPE["headline"].size}px;
+    font-weight: {TYPE["headline"].weight};
 }}
 
 #songs-page label.songs-page-count {{
-    color: {rgba(TEXT["primary"], 0.64)}.
-    font-size: {font_body.size}px.
-    font-weight: 500.
+    color: {rgba(TEXT["primary"], 0.64)};
+    font-size: {font_body.size}px;
+    font-weight: 500;
 }}
 
 /* Page-level playback controls: a compact Spotify/Apple Music-style row
    under the title.  The primary action is the only accent-filled pill;
    shuffle/repeat light up while active. */
 #songs-page #songs-page-actions {{
-    background-color: transparent.
+    background-color: transparent;
 }}
 
 #songs-page button.songs-page-control {{
-    color: {text_primary}.
-    background-color: {rgba(NEUTRAL["border"], 0.07)}.
-    background-image: none.
-    border: 1px solid {rgba(NEUTRAL["border"], 0.06)}.
-    border-radius: {RADIUS["pill"]}px.
-    box-shadow: none.
-    min-height: {SIZE["btn-transport"]}px.
-    padding: 0 {SPACING["4"]}px.
-    transition: background-color {EASE["normal"]}, border-color {EASE["normal"]}.
+    color: {text_primary};
+    background-color: {rgba(NEUTRAL["border"], 0.07)};
+    background-image: none;
+    border: 1px solid {rgba(NEUTRAL["border"], 0.06)};
+    border-radius: {RADIUS["pill"]}px;
+    box-shadow: none;
+    min-height: {SIZE["btn-transport"]}px;
+    padding: 0 {SPACING["4"]}px;
+    transition: background-color {EASE["normal"]}, border-color {EASE["normal"]};
 }}
 
 #songs-page button.songs-page-control:hover {{
-    background-color: {rgba(NEUTRAL["border"], 0.14)}.
-    border-color: {rgba(NEUTRAL["border"], 0.12)}.
+    background-color: {rgba(NEUTRAL["border"], 0.14)};
+    border-color: {rgba(NEUTRAL["border"], 0.12)};
 }}
 
 #songs-page button.songs-page-control:checked,
 #songs-page button.songs-page-control.active {{
-    background-color: {a1}.
-    background-image: linear-gradient(135deg, {a1}, {a1_hover}).
-    border-color: {rgba(NEUTRAL["border"], 0.14)}.
-    color: {text_inverse}.
-    box-shadow: 0 4px 14px {a1_glow}.
+    background-color: {a1};
+    background-image: linear-gradient(135deg, {a1}, {a1_hover});
+    border-color: {rgba(NEUTRAL["border"], 0.14)};
+    color: {text_inverse};
+    box-shadow: 0 4px 14px {a1_glow};
 }}
 
 #songs-page button.songs-page-control:checked:hover,
 #songs-page button.songs-page-control.active:hover {{
-    background-color: {a1_hover}.
-    background-image: linear-gradient(135deg, {a1_hover}, {a1}).
+    background-color: {a1_hover};
+    background-image: linear-gradient(135deg, {a1_hover}, {a1});
 }}
 
 #songs-page button.songs-page-play {{
-    background-color: {a1}.
-    background-image: linear-gradient(135deg, {a1}, {a1_hover}).
-    border-color: {rgba(NEUTRAL["border"], 0.14)}.
-    min-height: {SIZE["btn-play"]}px.
-    padding: 0 {SPACING["5"]}px.
-    border-radius: {RADIUS["pill"]}px.
-    box-shadow: 0 8px 22px {a1_glow}.
-    font-weight: 700.
+    background-color: {a1};
+    background-image: linear-gradient(135deg, {a1}, {a1_hover});
+    border-color: {rgba(NEUTRAL["border"], 0.14)};
+    min-height: {SIZE["btn-play"]}px;
+    padding: 0 {SPACING["5"]}px;
+    border-radius: {RADIUS["pill"]}px;
+    box-shadow: 0 8px 22px {a1_glow};
+    font-weight: 700;
 }}
 
 #songs-page button.songs-page-play:hover {{
-    background-color: {a1_hover}.
-    background-image: linear-gradient(135deg, {a1_hover}, {a1}).
+    background-color: {a1_hover};
+    background-image: linear-gradient(135deg, {a1_hover}, {a1});
 }}
 
 #songs-page button.songs-page-play label {{
-    color: {text_inverse}.
-    font-size: {font_subhead.size}px.
-    font-weight: 700.
+    color: {text_inverse};
+    font-size: {font_subhead.size}px;
+    font-weight: 700;
 }}
 
 #songs-page button.songs-page-transport {{
-    color: {rgba(TEXT["primary"], 0.82)}.
-    background-color: {rgba(NEUTRAL["border"], 0.06)}.
-    background-image: none.
-    border: 1px solid {rgba(NEUTRAL["border"], 0.05)}.
-    box-shadow: none.
-    min-width: {SIZE["btn-transport"]}px.
-    min-height: {SIZE["btn-transport"]}px.
-    padding: 0.
-    border-radius: {RADIUS["pill"]}px.
+    color: {rgba(TEXT["primary"], 0.82)};
+    background-color: {rgba(NEUTRAL["border"], 0.06)};
+    background-image: none;
+    border: 1px solid {rgba(NEUTRAL["border"], 0.05)};
+    box-shadow: none;
+    min-width: {SIZE["btn-transport"]}px;
+    min-height: {SIZE["btn-transport"]}px;
+    padding: 0;
+    border-radius: {RADIUS["pill"]}px;
 }}
 
 #songs-page button.songs-page-transport:hover {{
-    color: {text_primary}.
-    background-color: {rgba(NEUTRAL["border"], 0.14)}.
-    border-color: {rgba(NEUTRAL["border"], 0.12)}.
+    color: {text_primary};
+    background-color: {rgba(NEUTRAL["border"], 0.14)};
+    border-color: {rgba(NEUTRAL["border"], 0.12)};
 }}
 
 #songs-page separator.songs-page-action-divider {{
-    background-color: {rgba(NEUTRAL["border"], 0.10)}.
-    min-width: 1px.
-    margin-top: {SPACING["2"]}px.
-    margin-bottom: {SPACING["2"]}px.
+    background-color: {rgba(NEUTRAL["border"], 0.10)};
+    min-width: 1px;
+    margin-top: {SPACING["2"]}px;
+    margin-bottom: {SPACING["2"]}px;
 }}
 
 #songs-page label.songs-page-control-label {{
-    color: inherit.
-    font-size: {font_body_sm.size}px.
-    font-weight: 600.
+    color: inherit;
+    font-size: {font_body_sm.size}px;
+    font-weight: 600;
 }}
 
 #songs-page #songs-page-column-head {{
-    padding-bottom: {SPACING["2"]}px.
-    border-bottom: 1px solid {rgba(NEUTRAL["border"], 0.07)}.
+    padding-bottom: {SPACING["2"]}px;
+    border-bottom: 1px solid {rgba(NEUTRAL["border"], 0.07)};
 }}
 
 #songs-page label.songs-page-column-label {{
-    color: {rgba(TEXT["primary"], 0.34)}.
-    font-size: {font_caption.size}px.
-    font-weight: 700.
-    letter-spacing: {TRACKING["wide"]}.
+    color: {rgba(TEXT["primary"], 0.34)};
+    font-size: {font_caption.size}px;
+    font-weight: 700;
+    letter-spacing: {TRACKING["wide"]};
 }}
 
 #songs-page #songs-page-scroller {{
-    background-color: transparent.
+    background-color: transparent;
 }}
 
 #songs-page #songs-page-list {{
-    background-color: transparent.
-    margin: {SPACING["1"]}px {SPACING["6"]}px {SPACING["6"]}px {SPACING["6"]}px.
+    background-color: transparent;
+    margin: {SPACING["1"]}px {SPACING["6"]}px {SPACING["6"]}px {SPACING["6"]}px;
 }}
 
 #songs-page row.song-row {{
-    background-color: transparent.
-    border-radius: {RADIUS["sm"]}px.
-    padding: 0.
-    min-height: {SIZE["row-comfortable"]}px.
+    background-color: transparent;
+    border-radius: {RADIUS["sm"]}px;
+    padding: 0;
+    min-height: {SIZE["row-comfortable"]}px;
 }}
 
 #songs-page row.song-row:hover {{
-    background-color: {rgba(NEUTRAL["border"], 0.065)}.
+    background-color: {rgba(NEUTRAL["border"], 0.065)};
 }}
 
 #songs-page row.song-row.playing {{
     background-image: linear-gradient(
-        90deg, {a1_wash} 0%, {a1_faint} 62%, transparent 100%).
-    box-shadow: inset 3px 0 0 {a1}.
+        90deg, {a1_wash} 0%, {a1_faint} 62%, transparent 100%);
+    box-shadow: inset 3px 0 0 {a1};
 }}
 
 #songs-page row.song-row.playing label.song-number,
 #songs-page row.song-row.playing label.song-title {{
-    color: {a1}.
+    color: {a1};
 }}
 
 #songs-page row.song-row:selected,
 #songs-page row.song-row:active {{
-    background-color: {a1_faint}.
+    background-color: {a1_faint};
 }}
 
 #songs-page #songs-page-list box.song-art-frame {{
-    background-color: {rgba(NEUTRAL["border"], 0.045)}.
-    border-radius: {RADIUS["sm"]}px.
+    background-color: {rgba(NEUTRAL["border"], 0.045)};
+    border-radius: {RADIUS["sm"]}px;
 }}
 
 #songs-page #songs-page-list image.song-art-placeholder {{
-    color: {rgba(TEXT["primary"], 0.26)}.
+    color: {rgba(TEXT["primary"], 0.26)};
 }}
 
 #songs-page label.song-number {{
-    color: {rgba(TEXT["primary"], 0.32)}.
-    font-size: {font_caption.size}px.
-    font-weight: 600.
-    font-feature-settings: {FONT_FEATURE_TNUM}.
+    color: {rgba(TEXT["primary"], 0.32)};
+    font-size: {font_caption.size}px;
+    font-weight: 600;
+    font-feature-settings: {FONT_FEATURE_TNUM};
 }}
 
 #songs-page label.song-title {{
-    color: {text_primary}.
-    font-size: {font_subhead.size}px.
-    font-weight: 600.
+    color: {text_primary};
+    font-size: {font_subhead.size}px;
+    font-weight: 600;
 }}
 
 #songs-page label.song-artist {{
-    color: {rgba(TEXT["primary"], 0.55)}.
-    font-size: {font_body_sm.size}px.
+    color: {rgba(TEXT["primary"], 0.55)};
+    font-size: {font_body_sm.size}px;
 }}
 
 #songs-page label.song-album {{
-    color: {rgba(TEXT["primary"], 0.40)}.
-    font-size: {font_body_sm.size}px.
+    color: {rgba(TEXT["primary"], 0.40)};
+    font-size: {font_body_sm.size}px;
 }}
 
 #songs-page label.song-duration {{
-    color: {rgba(TEXT["primary"], 0.38)}.
-    font-size: {font_body_sm.size}px.
-    font-feature-settings: {FONT_FEATURE_TNUM}.
+    color: {rgba(TEXT["primary"], 0.38)};
+    font-size: {font_body_sm.size}px;
+    font-feature-settings: {FONT_FEATURE_TNUM};
 }}
 
 #songs-page label.song-empty {{
-    color: {rgba(TEXT["primary"], 0.42)}.
-    font-size: {font_body.size}px.
+    color: {rgba(TEXT["primary"], 0.42)};
+    font-size: {font_body.size}px;
 }}
 """
 
@@ -773,10 +773,10 @@ def _mix(a, b, t):
 
 
 def _adapt_to_accent(base, seed):
-    """Hue and saturation from the seed, lightness from the base colour.
+    """Hue and saturation from the seed, lightness from the base colour;
 
     Mirrors Quickshell's ColorUtils.adaptToAccent(base, seed), which is what
-    AdaptedMaterialScheme uses to bend the theme primary toward the artwork.
+    AdaptedMaterialScheme uses to bend the theme primary toward the artwork;
     """
     _bh, bl, _bs = _to_hls(base)
     sh, _sl, ss = _to_hls(seed)
@@ -810,17 +810,17 @@ def _lighten(color, amount):
 
 
 def generate_global_accent_css(background, accent1=None, accent2=None):
-    """GLOBAL wallpaper-accent layer applied in-process.
+    """GLOBAL wallpaper-accent layer applied in-process;
 
     Accepts either a single accent colour or the legacy
     ``(background, accent1, accent2)`` palette shape.  The accent is always
     the wallpaper-derived colour; album backgrounds are deliberately not
-    painted across the shell.
+    painted across the shell;
 
     The neutral canvas, cards and typography live in the static gtk.css base
     written by ``theme_generator.py``.  This provider only adds the adaptive
     accent points that should follow the wallpaper: selection, focus, primary
-    actions, the playback scrubber and the bottom player bar.
+    actions, the playback scrubber and the bottom player bar;
     """
     accent = accent1 if accent1 is not None else background
     if accent is None:
@@ -835,7 +835,7 @@ def generate_global_accent_css(background, accent1=None, accent2=None):
     return f"""
 /* ==========================================================
    Adaptive wallpaper accent layer (Apple Music shell)
-   Loaded in-process by AmbientStyler — do not put in gtk.css.
+   Loaded in-process by AmbientStyler — do not put in gtk.css;
    ========================================================== */
 
 /* Selection uses a soft wash so rows read as selected without drowning
@@ -937,11 +937,11 @@ row.queued {{
 
 
 def generate_page_css(accent):
-    """Wallpaper-accent overrides for the full-page Songs browser.
+    """Wallpaper-accent overrides for the full-page Songs browser;
 
     The panel palette still supplies the Songs page's neutral structure; this
     provider owns only the accent points so the library page follows the
-    desktop wallpaper rather than the currently playing album.
+    desktop wallpaper rather than the currently playing album;
     """
     if accent is None:
         accent = FALLBACK_ACCENT

@@ -201,7 +201,10 @@ if _extension_dir not in _lollypop_extension_sys.path:
     _lollypop_extension_sys.path.append(_extension_dir)
 
 try:
-    from widget_injector import install_right_panel as _LollypopExtensionInstall
+    try:
+        from lollypop.widget_injector import install_right_panel as _LollypopExtensionInstall
+    except ImportError:
+        from widget_injector import install_right_panel as _LollypopExtensionInstall
 except Exception:
     _LollypopExtensionInstall = None
     print("[Lollypop Extension] Import failed:")
