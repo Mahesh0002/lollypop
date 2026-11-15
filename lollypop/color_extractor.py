@@ -33,7 +33,7 @@ gi.require_version("GdkPixbuf", "2.0")
 from gi.repository import Gdk, GdkPixbuf, GLib, Gtk
 
 # Import design tokens
-from design_tokens import (
+from .design_tokens import (
     SPACING, RADIUS, TYPE, TEXT_OPACITY, TRACKING,
     NEUTRAL, TEXT, ELEVATION, HAIRLINE, EASE, MOTION, SIZE,
     FONT_STACK, MONO_STACK, FONT_FEATURE_TNUM, CSS_PRIORITY,
@@ -41,7 +41,7 @@ from design_tokens import (
 )
 
 try:
-    from accent_provider import FALLBACK_ACCENT
+    from .accent_provider import FALLBACK_ACCENT
 except Exception:  # pragma: no cover - preview scripts can import standalone
     FALLBACK_ACCENT = (10, 132, 255)
 

@@ -36,7 +36,7 @@ except Exception:  # pragma: no cover - Pillow is a project dependency
     Image = None
 
 # Import design tokens
-from design_tokens import FALLBACK_ACCENT
+from .design_tokens import FALLBACK_ACCENT
 
 PREFIX = "[Lollypop Extension]"
 

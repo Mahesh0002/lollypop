@@ -120,7 +120,7 @@ TEXT = {
 }
 
 # Accent color (resolved at runtime from wallpaper/album art)
-# FALLBACK_ACCENT = (10, 132, 255)  # Apple blue #0A84FF
+FALLBACK_ACCENT = (10, 132, 255)  # Apple blue #0A84FF
 
 
 # ============================================================
