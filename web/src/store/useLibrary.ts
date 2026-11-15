@@ -52,7 +52,7 @@ type LibraryState = {
   load: (offset?: number, limit?: number) => void
   loadMore: () => void
   setQuery: (q: string) => void
-  setView: (v: ViewId) => void
+  setView: (v: ViewId, fromHost?: boolean) => void
   selectAlbum: (album: Album | null) => void
   playTrack: (trackId: number, queue?: number[]) => void
   togglePlay: () => void
@@ -115,9 +115,13 @@ export const useLibrary = create<LibraryState>((set, get) => ({
 
   setQuery: (query) => set({ query }),
 
-  setView: (view) => {
+  setView: (view, fromHost) => {
     set({ view })
-    bridge.send({ type: 'NAVIGATE', payload: { view } })
+    // fromHost: the native sidebar already drove this change, so echoing it
+    // back to Python would just bounce the same message around.
+    if (!fromHost) {
+      bridge.send({ type: 'NAVIGATE', payload: { view } })
+    }
   },
 
   selectAlbum: (album) => {
@@ -222,4 +226,12 @@ bridge.on('PLAYBACK_POSITION', (payload) => {
 
 bridge.on('ERROR', (payload) => {
   useLibrary.setState({ error: payload.message, loading: false })
+})
+
+// Native sidebar -> SPA navigation (Albums, Artists, Playlists, Songs, ...).
+bridge.on('NAVIGATE', (payload) => {
+  const view = payload?.view
+  if (view) {
+    useLibrary.getState().setView(view as ViewId, true)
+  }
 })

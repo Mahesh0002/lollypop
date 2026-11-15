@@ -183,65 +183,140 @@ class ListsContainer:
             @param row as Gtk.ListBoxRow
         """
         Logger.debug("Container::__on_sidebar_activated()")
+        view = None
+        focus_set = False
         selected_id = self._sidebar.selected_id
         if selected_id is None:
             return
 
-        # Map sidebar IDs to WebView view names
+        # Sidebar IDs the SPA can render.  Anything not listed here has no
+        # SPA page, so we hand it back to the native stack instead of
+        # switching the web view to a blank screen.
         view_map = {
-            Type.ALL: 'albums',
-            Type.ARTISTS: 'artists',
-            Type.ARTISTS_LIST: 'artists',
-            Type.GENRES: 'genres',
-            Type.GENRES_LIST: 'genres',
-            Type.PLAYLISTS: 'playlists',
-            Type.POPULARS: 'albums',
-            Type.LOVED: 'albums',
-            Type.RECENTS: 'albums',
-            Type.LITTLE: 'albums',
-            Type.RANDOMS: 'albums',
-            Type.YEARS: 'years',
-            Type.COMPILATIONS: 'compilations',
-            Type.WEB: 'albums',
-            Type.CURRENT: 'listen-now',
-            Type.SUGGESTIONS: 'listen-now',
-            Type.PLAYLISTS: 'playlists',
-            Type.LYRICS: 'lyrics',
-            Type.INFO: 'info',
-            Type.SEARCH: 'search',
-            Type.YEARS: 'years',
-            Type.COMPILATIONS: 'compilations',
-            Type.ARTISTS: 'artists',
-            Type.ARTISTS_LIST: 'artists',
-            Type.TRACKS: 'tracks',
+            Type.ALL: "albums",
+            Type.POPULARS: "albums",
+            Type.LOVED: "albums",
+            Type.RECENTS: "albums",
+            Type.LITTLE: "albums",
+            Type.RANDOMS: "albums",
+            Type.WEB: "albums",
+            Type.COMPILATIONS: "albums",
+            Type.ARTISTS: "artists",
+            Type.ARTISTS_LIST: "artists",
+            Type.PLAYLISTS: "playlists",
+            Type.TRACKS: "tracks",
+            Type.CURRENT: "listen-now",
+            Type.SUGGESTIONS: "listen-now",
+            Type.SEARCH: "search",
         }
 
-        webview_view = view_map.get(selected_id)
-        if webview_view:
-            # Send NAVIGATE IPC to WebView
-            try:
-                webview = App().window.container.webview
-                if webview and webview.ipc:
-                    webview.ipc.send({
-                        "type": "NAVIGATE",
-                        "payload": {"view": webview_view}
-                    })
-                    Logger.debug("Container::sidebar -> NAVIGATE %s", webview_view)
-            except Exception as e:
-                Logger.warning("Container: failed to send NAVIGATE: %s", e)
+        if self.web_shown:
+            webview_view = view_map.get(selected_id)
+            if webview_view is not None:
+                try:
+                    webview = self.webview
+                    if webview is not None and webview.ipc is not None:
+                        webview.ipc.send({
+                            "type": "NAVIGATE",
+                            "payload": {"view": webview_view}
+                        })
+                        Logger.debug("Container::sidebar -> NAVIGATE %s",
+                                     webview_view)
+                except Exception as e:
+                    Logger.warning("Container: failed to send NAVIGATE: %s", e)
+                emit_signal(self, "can-go-back-changed", self.can_go_back)
+                return
+            # No SPA page for this row: go back to the native views.
+            Logger.debug("Container::sidebar -> native (no SPA page)")
+            self.show_webview(False)
 
-        # Still update the native UI for folded state etc.
-        # Ensure grid_view is a child of sub_widget (it may have been removed when webview was shown)
-        if self.grid_view.get_parent() != self.sub_widget:
+        # Native path: grid_view must be back in sub_widget before we show it.
+        if self.grid_view.get_parent() is not self.sub_widget:
             self.sub_widget.add(self.grid_view)
         self.sub_widget.set_visible_child(self.grid_view)
-        self.left_list.hide()
-        self.left_list.clear()
-        if self.widget.get_folded():
-            self.widget.set_visible_child(self.sub_widget)
-            self.sub_widget.set_visible_child(self.grid_view)
 
-        # Still emit signal for back button state
+        # Update lists
+        if selected_id in [Type.ARTISTS_LIST, Type.GENRES_LIST] and\
+                self.type_ahead.get_reveal_child() and\
+                self.left_list.get_visible():
+            self.set_focused_view(self.left_list)
+            focus_set = True
+        elif selected_id == Type.ARTISTS_LIST:
+            self._show_artists_list(self.left_list)
+            self._hide_right_list()
+            self.left_list.show()
+            self.widget.set_visible_child(self.sub_widget)
+            self.sub_widget.set_visible_child(self.left_list)
+            self.set_focused_view(self.left_list)
+            focus_set = True
+        elif selected_id == Type.GENRES_LIST:
+            self._show_genres_list(self.left_list)
+            self._hide_right_list()
+            self.left_list.show()
+            self.widget.set_visible_child(self.sub_widget)
+            self.sub_widget.set_visible_child(self.left_list)
+            self.set_focused_view(self.left_list)
+            focus_set = True
+        else:
+            self.left_list.hide()
+            self.left_list.clear()
+            if self.widget.get_folded():
+                self.widget.set_visible_child(self.sub_widget)
+                self.sub_widget.set_visible_child(self.grid_view)
+
+        # The injected "Songs" row is handled by its own handler in
+        # widget_injector; never tear its page down here.
+        try:
+            from lollypop.widget_injector import SONGS_SIDEBAR_ROW_ID
+        except Exception:
+            SONGS_SIDEBAR_ROW_ID = None
+        if SONGS_SIDEBAR_ROW_ID is not None and\
+                selected_id == SONGS_SIDEBAR_ROW_ID:
+            emit_signal(self, "can-go-back-changed", self.can_go_back)
+            return
+
+        storage_type = get_default_storage_type()
+        if selected_id in [Type.ARTISTS_LIST, Type.GENRES_LIST] and not\
+                App().window.folded:
+            view = NoneView()
+            view.show()
+        elif selected_id == Type.PLAYLISTS:
+            view = self._get_view_playlists()
+        elif selected_id == Type.LYRICS:
+            view = self._get_view_lyrics()
+        elif selected_id == Type.CURRENT:
+            view = self.get_view_current()
+        elif selected_id == Type.SEARCH:
+            view = self.get_view_search()
+        elif selected_id == Type.INFO:
+            view = self._get_view_info()
+        elif selected_id == Type.SUGGESTIONS:
+            view = self._get_view_suggestions(storage_type)
+        elif selected_id in [Type.POPULARS,
+                             Type.LOVED,
+                             Type.RECENTS,
+                             Type.LITTLE,
+                             Type.RANDOMS]:
+            view = self._get_view_albums([selected_id], [], storage_type)
+        elif selected_id == Type.WEB:
+            view = self._get_view_albums([selected_id], [], StorageType.SAVED)
+        elif selected_id == Type.YEARS:
+            view = self._get_view_albums_decades(storage_type)
+        elif selected_id == Type.GENRES:
+            view = self._get_view_genres(storage_type)
+        elif selected_id == Type.ARTISTS:
+            view = self._get_view_artists_rounded(storage_type)
+        elif selected_id == Type.ALL:
+            view = self._get_view_albums([selected_id], [], storage_type)
+        elif selected_id == Type.COMPILATIONS:
+            view = self._get_view_albums([selected_id], [], storage_type)
+        if view is not None and view not in self._stack.get_children():
+            view.show()
+            self._stack.add(view)
+        if view is not None:
+            self._stack.set_visible_child(view)
+            if not focus_set:
+                self.set_focused_view(view)
         emit_signal(self, "can-go-back-changed", self.can_go_back)
 
     def __on_sidebar_populated(self, selection_list):

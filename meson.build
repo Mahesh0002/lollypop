@@ -97,7 +97,14 @@ ext_sources = [
 
 # Build shared library with Python extension suffix using custom_target with build script
 # On Linux: .cpython-3XX-x86_64-linux-gnu.so
-ext_name = 'lollypop_ext' + '.cpython-' + py_installation.version().split('.')[0] + py_installation.version().split('.')[1] + '-' + host_machine.cpu_family() + '-' + host_machine.system() + '.so'
+# Use CPython's real EXT_SUFFIX so the installed module is importable
+# (e.g. lollypop_ext.cpython-314-x86_64-linux-gnu.so, not ...-linux.so).
+ext_suffix = run_command(
+    py_installation,
+    ['-c', 'import sysconfig; print(sysconfig.get_config_var("EXT_SUFFIX"))'],
+    check: true,
+).stdout().strip()
+ext_name = 'lollypop_ext' + ext_suffix
 
 lollypop_ext = custom_target(
     'lollypop_ext',
