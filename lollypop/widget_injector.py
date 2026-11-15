@@ -1419,32 +1419,29 @@ def _pad(widget, amount=8):
     return widget
 
 
+# Maximum panel width when matching artwork aspect ratio
+MAX_PANEL_WIDTH = 500
+# Default fallback width when no artwork
+DEFAULT_PANEL_WIDTH = 320
+
 class AlbumArtwork(Gtk.DrawingArea):
-    """A big, dynamically scaled square artwork with rounded corners via Cairo."""
+    """Artwork that maintains its original aspect ratio, with panel width callback."""
     def __init__(self):
         super().__init__()
         self._pixbuf = None
         self._key = None
         self.accent = None
+        self._on_size_change = None  # Callback: (width, height) when artwork loads
         self.set_name("right-panel-artwork-frame")
         self.set_hexpand(True)
         self.set_vexpand(False)
         self.connect("draw", self._on_draw)
-        self.connect("size-allocate", self._on_size_allocate)
 
-    def _on_size_allocate(self, widget, allocation):
-        # Force a perfect square based on available panel width.  Defer the
-        # size request: changing it from inside size-allocate re-enters GTK's
-        # allocation cycle and can leave sibling views with a broken
-        # allocation (the album FlowBox bug).
-        if allocation.width > 1:
-            GLib.idle_add(self._set_square, allocation.width)
-
-    def _set_square(self, width):
-        _, current_h = self.get_size_request()
-        if current_h != width:
-            self.set_size_request(-1, width)
-        return False
+    def set_size_change_callback(self, callback):
+        """Set callback to notify when artwork dimensions change.
+        Callback receives (original_width, original_height, panel_width).
+        """
+        self._on_size_change = callback
 
     def set_artwork(self, path):
         if path:
@@ -1455,6 +1452,24 @@ class AlbumArtwork(Gtk.DrawingArea):
                 self._pixbuf = GdkPixbuf.Pixbuf.new_from_file(path)
                 self._key = key
                 self.accent = _accent_from_pixbuf(self._pixbuf)
+                
+                # Notify about artwork dimensions for panel width calculation
+                if self._on_size_change and self._pixbuf:
+                    orig_w = self._pixbuf.get_width()
+                    orig_h = self._pixbuf.get_height()
+                    # Calculate panel width from artwork aspect ratio, capped at MAX_PANEL_WIDTH
+                    if orig_h > 0:
+                        aspect = orig_w / orig_h
+                        panel_width = min(int(orig_h * aspect), MAX_PANEL_WIDTH)
+                        # Ensure minimum reasonable width
+                        panel_width = max(panel_width, 280)
+                        self._on_size_change(orig_w, orig_h, panel_width)
+                        # Also set this widget's size request to match artwork aspect ratio
+                        # The widget gets the panel width (minus margins), so calculate height
+                        widget_width = panel_width - 2 * PADDING  # Account for margins
+                        widget_height = int(widget_width / aspect) if aspect > 0 else widget_width
+                        self.set_size_request(widget_width, widget_height)
+                
                 self.queue_draw()
                 return True
             except Exception as exc:
@@ -1462,6 +1477,10 @@ class AlbumArtwork(Gtk.DrawingArea):
 
         self._key = None
         self.accent = None
+        # Reset to default width when no artwork
+        if self._on_size_change:
+            self._on_size_change(0, 0, DEFAULT_PANEL_WIDTH)
+            
         theme = Gtk.IconTheme.get_default()
         if theme.has_icon("audio-x-generic"):
             try:
@@ -3366,6 +3385,8 @@ class RightPanel(Gtk.Box):
         self.artwork.set_margin_end(PADDING)
         self.artwork.set_margin_top(PADDING)
         self.artwork.set_margin_bottom(PADDING)
+        # Connect artwork size change callback to adjust panel width
+        self.artwork.set_size_change_callback(self._on_artwork_size_change)
         artwork_frame = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         artwork_frame.set_margin_start(PADDING)
         artwork_frame.set_margin_end(PADDING)
@@ -3951,6 +3972,22 @@ class RightPanel(Gtk.Box):
             self._start_lyrics_timer()
         return False
 
+    def _on_artwork_size_change(self, orig_width, orig_height, panel_width):
+        """Callback when artwork dimensions change.
+        Updates the panel width to match artwork aspect ratio.
+        """
+        if self._destroyed:
+            return
+        # Only update if the panel width actually changes
+        current_width = self.get_size_request()[0]
+        if current_width != panel_width:
+            _debug(f"Panel width update: {current_width} -> {panel_width} (artwork: {orig_width}x{orig_height})")
+            self.set_size_request(panel_width, -1)
+            # Queue a resize on the toplevel window
+            toplevel = self.get_toplevel()
+            if toplevel and hasattr(toplevel, "queue_resize"):
+                toplevel.queue_resize()
+
     def _on_destroy(self, *_args):
         self._destroyed = True
         self._stop_lyrics_timer()
@@ -4221,13 +4258,26 @@ def install_right_panel(vgrid, container, toolbar=None):
     # has finished.
     resize_idle = [0]
     pending_size = [0, 0]
+    # Track if panel width was set by artwork (to avoid overriding it)
+    artwork_width_set = [False]
 
     def apply_window_size():
         resize_idle[0] = 0
         width, height = pending_size
-        target_width = max(280, int(width * 0.25))
-        if panel.get_size_request()[0] != target_width:
-            panel.set_size_request(target_width, -1)
+        # Only apply window-based width if artwork hasn't set a specific width
+        # or if the artwork width exceeds window width (cap at window width)
+        current_width = panel.get_size_request()[0]
+        max_allowed = max(280, int(width * 0.4))  # Cap at 40% of window width
+        
+        if artwork_width_set[0]:
+            # Artwork has set the width - just ensure it doesn't exceed window
+            if current_width > max_allowed:
+                panel.set_size_request(max_allowed, -1)
+        else:
+            # No artwork yet - use window-based sizing (25% of window, min 280)
+            target_width = max(280, int(width * 0.25))
+            if current_width != target_width:
+                panel.set_size_request(target_width, -1)
 
         # The Lyrics / Up Next notebook owns the remaining height.  No fixed
         # queue height is needed now that both lists are separate tabs.
@@ -4247,6 +4297,17 @@ def install_right_panel(vgrid, container, toolbar=None):
             if allocation.width > 1:
                 on_window_size_allocate(window, allocation)
         return False
+
+    # Connect to panel's size-request changes to track artwork-based width
+    def on_panel_size_request(panel, _pspec):
+        # If panel width is not the default window-based width, assume artwork set it
+        current = panel.get_size_request()[0]
+        window_width = pending_size[0] or 1000
+        window_based = max(280, int(window_width * 0.25))
+        # If width differs significantly from window-based, it's artwork-driven
+        artwork_width_set[0] = abs(current - window_based) > 20
+
+    panel.connect("notify::size-request", on_panel_size_request)
 
     GLib.idle_add(attach_resize_listener)
 
