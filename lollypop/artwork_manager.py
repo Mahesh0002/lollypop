@@ -218,7 +218,8 @@ class ArtworkManager(GObject.GObject):
 
     def _get_blur(self, pixbuf, gaussian):
         """
-            Blur surface using PIL
+            Blur surface using the C++ acceleration module when available,
+            falling back to PIL otherwise.
             @param pixbuf as GdkPixbuf.Pixbuf
             @param gaussian as int
             @return GdkPixbuf.Pixbuf
@@ -229,7 +230,26 @@ class ArtworkManager(GObject.GObject):
         height = pixbuf.get_height()
         data = pixbuf.get_pixels()
         stride = pixbuf.get_rowstride()
+        channels = pixbuf.get_n_channels()
         has_alpha = pixbuf.get_has_alpha()
+
+        # C++ accelerated path: separable Gaussian blur directly on the
+        # pixbuf's pixel bytes (avoids the Python/PIL round-trip).
+        try:
+            from . import lollypop_ext
+            if lollypop_ext is not None:
+                raw = bytes(data)
+                blurred = lollypop_ext.blur.blur_bytes(
+                    raw, width, height, channels, stride, gaussian)
+                if blurred:
+                    bytes_ = GLib.Bytes.new(blurred)
+                    return GdkPixbuf.Pixbuf.new_from_bytes(
+                        bytes_, GdkPixbuf.Colorspace.RGB, has_alpha, 8,
+                        width, height, stride)
+        except Exception:
+            pass  # fall through to PIL below
+
+        # PIL fallback
         if has_alpha:
             mode = "RGBA"
             dst_row_stride = width * 4
