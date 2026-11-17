@@ -154,6 +154,38 @@ static void bind_blur(py::module& m) {
         });
     }, py::arg("pixbuf"), py::arg("radius"), py::arg("mode") = BlurMode::GAUSSIAN,
     "Copy pixbuf and apply Gaussian blur (original unchanged).");
+
+    m.def("blur_bytes", [](py::buffer pixels, int width, int height, int channels,
+                           int stride, int radius, BlurMode mode) 
+        -> py::bytes {
+        py::buffer_info info = pixels.request();
+        if (info.itemsize != 1) {
+            throw py::value_error("Expected a byte (uint8) pixel buffer");
+        }
+        if (width <= 0 || height <= 0 || channels < 3) {
+            throw py::value_error("Expected positive dimensions and >= 3 channels");
+        }
+        const int use_stride = (stride > 0 && stride >= width * channels)
+            ? stride : static_cast<int>(info.strides[0]);
+        if (use_stride < width * channels) {
+            throw py::value_error("Stride is smaller than width*channels");
+        }
+        const size_t needed = static_cast<size_t>(use_stride) * height;
+        if (static_cast<size_t>(info.size) < needed) {
+            throw py::value_error("Pixel buffer is smaller than stride*height");
+        }
+
+        auto out = lollypop_ext::blur_bytes(
+            static_cast<const guchar*>(info.ptr), width, height, channels,
+            use_stride, radius, mode);
+        if (out.empty()) {
+            throw py::value_error("Blur failed");
+        }
+        return py::bytes(reinterpret_cast<const char*>(out.data()), out.size());
+    }, py::arg("pixels"), py::arg("width"), py::arg("height"), py::arg("channels"),
+       py::arg("stride"), py::arg("radius"), py::arg("mode") = BlurMode::GAUSSIAN,
+    "Blur raw pixel bytes (stride*height). Accepts any contiguous byte buffer. "
+    "Returns a new bytes object.");
 }
 
 // ============================================================================

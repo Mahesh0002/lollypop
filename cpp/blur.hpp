@@ -35,4 +35,13 @@ Result<bool> separable_convolve(GdkPixbuf* pixbuf, const std::vector<double>& ke
 /** Fast box blur approximation (3 passes of box filter ≈ Gaussian). */
 Result<bool> box_blur_approximation(GdkPixbuf* pixbuf, int radius);
 
+/** Blur raw pixel bytes and return a newly allocated copy.
+ *
+ *  ``pixels`` points to ``stride * height`` bytes (rowstride may include
+ *  padding).  Returns the blurred pixels in a fresh buffer of the same size.
+ *  Ownership: caller must not mutate ``pixels`` during the call. */
+std::vector<guchar> blur_bytes(const guchar* pixels, int width, int height,
+                               int channels, int stride, int radius,
+                               BlurMode mode = BlurMode::GAUSSIAN);
+
 }  // namespace lollypop_ext
